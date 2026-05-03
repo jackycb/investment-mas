@@ -1,0 +1,39 @@
+.DS_Store
+.env
+.env.local
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+*.pyo
+*.pyd
+*.log
+dist/
+build/
+*.egg-info/
+postgres_data/
+
+# Data directories with large/binary files
+data/browser_profiles/
+data/browser_tools/
+data/company_docs/
+data/finance_report_web/
+data/vector_store/
+data/parameters/
+data/results/
+
+# Large data files
+*.xlsx
+*.csv
+*.pdf
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.production
+

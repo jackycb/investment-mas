@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: investment_mas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      INVESTMENT_MAS_DATABASE_URL: ${INVESTMENT_MAS_DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/investment_mas}
+      INVESTMENT_MAS_FINANCIAL_DATA_PROVIDER: ${INVESTMENT_MAS_FINANCIAL_DATA_PROVIDER:-hybrid}
+      INVESTMENT_MAS_LOCAL_FINANCIAL_BASE_DIR: ${INVESTMENT_MAS_LOCAL_FINANCIAL_BASE_DIR:-/data/finance_report_web}
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+    volumes:
+      - ${LOCAL_FINANCIAL_MOUNT_DIR:-/Users/jacky/Desktop/Mypython/stock/finance_report_web}:/data/finance_report_web:ro
+
+volumes:
+  postgres_data:

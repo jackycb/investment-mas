@@ -1,0 +1,1125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Investment MAS</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f1720;
+        --panel: #131d28;
+        --panel-2: #182433;
+        --panel-3: #1d2b3d;
+        --line: #27384a;
+        --text: #e8eef5;
+        --muted: #93a4b8;
+        --accent: #2ea46c;
+        --accent-2: #1e7f52;
+        --warn: #b88916;
+        --danger: #c55f5f;
+        --bubble-user: #1f344c;
+        --bubble-assistant: #16202c;
+        --shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+        --font-xs: 12px;
+        --font-sm: 13px;
+        --font-base: 14px;
+        --font-lg: 15px;
+        --font-xl: 18px;
+        --font-2xl: 22px;
+        --radius: 8px;
+        --radius-lg: 12px;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top, #182434 0%, var(--bg) 56%);
+        color: var(--text);
+        font-size: var(--font-base);
+      }
+
+      body { overflow: hidden; }
+
+      .app {
+        height: 100vh;
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        grid-template-rows: 1fr;
+      }
+
+      /* ---- Sidebar ---- */
+
+      .sidebar {
+        background: rgba(19, 29, 40, 0.94);
+        border-right: 1px solid var(--line);
+        backdrop-filter: blur(14px);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .sidebar-top {
+        padding: 20px 16px 0;
+        display: grid;
+        gap: 16px;
+      }
+
+      .brand { display: grid; gap: 6px; }
+      .brand h1 { margin: 0; font-size: var(--font-2xl); }
+      .brand p { margin: 0; color: var(--muted); font-size: var(--font-sm); line-height: 1.5; }
+
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        padding: 14px;
+        box-shadow: var(--shadow);
+      }
+
+      .card-title {
+        margin: 0 0 10px;
+        font-size: var(--font-sm);
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .form-grid { display: grid; gap: 10px; }
+
+      label {
+        display: grid;
+        gap: 4px;
+        font-size: var(--font-sm);
+        color: var(--muted);
+      }
+
+      input, textarea, select, button {
+        font-family: inherit;
+        font-size: var(--font-base);
+      }
+
+      input, textarea, select {
+        width: 100%;
+        padding: 9px 10px;
+        border-radius: var(--radius);
+        border: 1px solid var(--line);
+        background: #0e1520;
+        color: var(--text);
+      }
+
+      select {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='7'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2393a4b8' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 10px center;
+        padding-right: 28px;
+      }
+
+      textarea { min-height: 72px; resize: vertical; }
+
+      input:focus, textarea:focus, select:focus {
+        outline: 2px solid rgba(46, 164, 108, 0.18);
+        border-color: var(--accent);
+      }
+
+      button {
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--text);
+        border-radius: var(--radius);
+        padding: 9px 16px;
+        font-size: var(--font-base);
+        font-weight: 500;
+        cursor: pointer;
+        transition: filter 0.15s, opacity 0.15s;
+      }
+
+      button.primary { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+      button.danger-btn { background: var(--danger); border-color: var(--danger); color: #fff; }
+      button:hover:not(:disabled) { filter: brightness(1.08); }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: var(--font-sm);
+        color: var(--muted);
+      }
+
+      .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--accent); flex-shrink: 0; }
+      .dot.running { animation: pulse 1.2s ease-in-out infinite; }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+      }
+
+      /* ---- Thread list ---- */
+
+      .thread-section {
+        padding: 12px 16px 16px;
+        overflow-y: auto;
+        min-height: 0;
+      }
+
+      .thread-section-title {
+        font-size: var(--font-xs);
+        font-weight: 600;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin: 0 0 8px;
+      }
+
+      .thread-list { display: grid; gap: 2px; }
+
+      .thread-item {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 10px;
+        border-radius: var(--radius);
+        cursor: pointer;
+        font-size: var(--font-sm);
+        color: var(--muted);
+        border: 1px solid transparent;
+        transition: background 0.15s, border-color 0.15s;
+        position: relative;
+      }
+
+      .thread-item:hover { background: var(--panel-2); }
+      .thread-item.active { background: var(--panel-3); border-color: var(--line); color: var(--text); }
+      .thread-item.pinned { border-left: 2px solid var(--accent); }
+
+      .thread-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--accent); flex-shrink: 0; }
+      .thread-dot.idle { background: var(--muted); opacity: 0.4; }
+      .thread-dot.failed { background: var(--danger); opacity: 0.8; }
+      .thread-dot.stopped { background: var(--warn); opacity: 0.7; }
+
+      .thread-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+      .thread-right {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .thread-badge { font-size: 11px; color: var(--accent); font-weight: 600; }
+
+      .thread-menu-btn {
+        display: none;
+        background: none;
+        border: none;
+        color: var(--muted);
+        padding: 2px 4px;
+        font-size: 14px;
+        cursor: pointer;
+        border-radius: 4px;
+        line-height: 1;
+      }
+
+      .thread-item:hover .thread-menu-btn { display: block; }
+      .thread-menu-btn:hover { background: var(--panel-3); color: var(--text); }
+
+      /* ---- Context menu ---- */
+
+      .ctx-menu {
+        position: fixed;
+        z-index: 1000;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        padding: 4px 0;
+        min-width: 160px;
+        display: none;
+      }
+
+      .ctx-menu.open { display: block; }
+
+      .ctx-item {
+        padding: 7px 14px;
+        font-size: var(--font-sm);
+        color: var(--text);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .ctx-item:hover { background: var(--panel-2); }
+      .ctx-item.danger { color: var(--danger); }
+      .ctx-sep { height: 1px; background: var(--line); margin: 4px 0; }
+
+      /* ---- Rename inline ---- */
+
+      .thread-rename-input {
+        font-size: var(--font-sm);
+        padding: 2px 6px;
+        border: 1px solid var(--accent);
+        border-radius: 4px;
+        background: #0e1520;
+        color: var(--text);
+        width: 100%;
+        outline: none;
+      }
+
+      /* ---- Chat main area ---- */
+
+      .chat-shell {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .chat-header {
+        padding: 16px 24px 12px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(15, 23, 32, 0.8);
+        backdrop-filter: blur(10px);
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+        gap: 16px;
+        flex-wrap: wrap;
+      }
+
+      .chat-header h2 { margin: 0 0 4px; font-size: var(--font-xl); }
+      .chat-header p { margin: 0; color: var(--muted); font-size: var(--font-sm); }
+      .chat-header .status-row { white-space: nowrap; }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      #stop-button {
+        display: none;
+        padding: 5px 14px;
+        font-size: var(--font-sm);
+      }
+
+      .messages {
+        padding: 20px 24px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: grid;
+        gap: 12px;
+        align-content: start;
+        min-height: 0;
+      }
+
+      .message { display: grid; gap: 4px; max-width: 900px; }
+      .message.user { justify-self: end; }
+      .message.assistant { justify-self: start; }
+
+      .message-role {
+        font-size: var(--font-xs);
+        color: var(--muted);
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .message.user .message-role { text-align: right; }
+
+      .bubble {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 12px 14px;
+        line-height: 1.65;
+        font-size: var(--font-base);
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--bubble-assistant);
+      }
+
+      .message.user .bubble { background: var(--bubble-user); }
+
+      .message-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: var(--panel);
+        padding: 14px;
+        display: grid;
+        gap: 8px;
+        font-size: var(--font-base);
+      }
+
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: var(--font-xs);
+        color: var(--muted);
+        background: var(--panel-2);
+      }
+
+      .report-box, pre {
+        margin: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: #0f1823;
+        padding: 12px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        line-height: 1.65;
+        font-family: inherit;
+        font-size: var(--font-base);
+      }
+
+      .composer {
+        padding: 12px 24px 20px;
+        border-top: 1px solid var(--line);
+        background: rgba(15, 23, 32, 0.9);
+      }
+
+      .composer-grid { display: grid; gap: 8px; }
+      .composer .button-row { display: flex; gap: 8px; }
+      .composer-note { font-size: var(--font-xs); color: var(--muted); }
+
+      .meta-list { display: grid; gap: 8px; }
+
+      .meta-item {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+        padding: 10px 12px;
+        display: grid;
+        gap: 4px;
+      }
+
+      .meta-key { font-size: var(--font-sm); font-weight: 600; }
+      .meta-value { font-size: var(--font-sm); color: var(--muted); }
+
+      .filing-list, .document-list { display: grid; gap: 8px; }
+
+      .filing-item, .document-item {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--panel-2);
+        padding: 10px 12px;
+        display: grid;
+        gap: 6px;
+      }
+
+      .empty { color: var(--muted); font-size: var(--font-sm); }
+      .danger { color: #ffb1b1; }
+
+      .collapsible-toggle {
+        cursor: pointer;
+        user-select: none;
+        color: var(--accent);
+        font-size: var(--font-sm);
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .collapsible-toggle::before {
+        content: "\25B8";
+        display: inline-block;
+        transition: transform 0.2s;
+        font-size: 11px;
+      }
+
+      .collapsible-toggle.open::before { transform: rotate(90deg); }
+      .collapsible-body { display: none; margin-top: 8px; }
+      .collapsible-body.open { display: grid; gap: 8px; }
+
+      @media (max-width: 880px) {
+        .app { grid-template-columns: 1fr; }
+        .sidebar { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <section class="brand">
+            <h1>Investment MAS</h1>
+            <p>Annual-report-first, Google-News-driven, value-analysis-prioritized research workbench.</p>
+          </section>
+
+          <section class="card">
+            <h3 class="card-title">Start Research</h3>
+            <form id="research-form" class="form-grid">
+              <label>Ticker<input id="ticker" name="ticker" placeholder="e.g. US.NVDA / HK.00700" required /></label>
+              <label>Company Name<input id="company-name" name="company_name" placeholder="e.g. NVIDIA / Tencent" required /></label>
+              <label>Model
+                <select id="model-select" name="model">
+                  <option value="">Default</option>
+                  <option value="qwen-turbo-2025-04-28">qwen-turbo-2025-04-28</option>
+                  <option value="qwen-plus">qwen-plus</option>
+                  <option value="qwen-max">qwen-max</option>
+                  <option value="qwen3-235b-a22b">qwen3-235b-a22b</option>
+                  <option value="qwen3-coder">qwen3-coder</option>
+                  <option value="deepseek-v3">deepseek-v3</option>
+                  <option value="deepseek-r1">deepseek-r1</option>
+                  <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                  <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+                </select>
+              </label>
+              <div class="button-row">
+                <button id="run-button" class="primary" type="submit">Run Research</button>
+                <button id="latest-button" type="button">Load Latest</button>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <section class="thread-section">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <h4 class="thread-section-title" style="margin:0;">Recent Tasks</h4>
+            <div style="display:flex;gap:4px;">
+              <button id="export-threads-btn" title="Export all tasks" style="padding:3px 8px;font-size:var(--font-xs);">Export</button>
+              <button id="import-threads-btn" title="Import tasks" style="padding:3px 8px;font-size:var(--font-xs);">Import</button>
+            </div>
+          </div>
+          <input type="file" id="import-file-input" accept=".json" style="display:none;" />
+          <div id="thread-list" class="thread-list"></div>
+        </section>
+      </aside>
+
+      <main class="chat-shell">
+        <header class="chat-header">
+          <div>
+            <h2>Research Chat</h2>
+            <p id="header-subtitle">All analysis progress, results, and follow-up questions are integrated in a single conversation.</p>
+          </div>
+          <div class="header-actions">
+            <button id="stop-button" class="danger-btn">Stop</button>
+            <div class="status-row">
+              <span id="status-dot" class="dot"></span>
+              <span id="status-text">Waiting for task</span>
+            </div>
+          </div>
+        </header>
+
+        <section id="messages" class="messages"></section>
+
+        <footer class="composer">
+          <div class="composer-grid">
+            <textarea id="chat-input" placeholder="Run a research task first, then ask follow-up questions, e.g.: What are the two most important risks to monitor?"></textarea>
+            <div class="button-row">
+              <button id="chat-button" type="button">Ask Follow-up</button>
+            </div>
+            <div class="composer-note">Chat answers are based solely on the latest research report and will not fabricate new facts.</div>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <!-- Context menu -->
+    <div id="ctx-menu" class="ctx-menu">
+      <div class="ctx-item" data-action="rename">Rename</div>
+      <div class="ctx-item" data-action="pin">Pin to top</div>
+      <div class="ctx-item" data-action="copy">Duplicate</div>
+      <div class="ctx-item" data-action="share">Copy summary</div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item danger" data-action="delete">Delete</div>
+    </div>
+
+    <script>
+      const $ = (s) => document.getElementById(s);
+      const form = $("research-form");
+      const tickerInput = $("ticker");
+      const companyNameInput = $("company-name");
+      const runButton = $("run-button");
+      const latestButton = $("latest-button");
+      const chatInput = $("chat-input");
+      const chatButton = $("chat-button");
+      const statusText = $("status-text");
+      const statusDot = $("status-dot");
+      const headerSubtitle = $("header-subtitle");
+      const messagesEl = $("messages");
+      const threadListEl = $("thread-list");
+      const stopButton = $("stop-button");
+      const ctxMenu = $("ctx-menu");
+
+      const AGENT_ROLES = {
+        company_profiler: "CompanyProfiler",
+        filing_coverage_checker: "FilingCoverageChecker",
+        business_analyst: "BusinessAnalyst",
+        culture_analyst: "CultureAnalyst",
+        peer_analyzer: "PeerAnalyzer",
+        news_collector: "NewsCollector",
+        financial_analyst: "FinancialAnalyst",
+        valuation_agent: "ValuationAgent",
+        risk_analyst: "RiskAnalyst",
+        investment_expert: "InvestmentExpert",
+        report_coverage_checker: "ReportCoverageChecker",
+      };
+
+      let eventSource = null;
+      let currentTicker = "";
+
+      // ===================== Thread Store =====================
+
+      let threads = JSON.parse(localStorage.getItem("mas_threads") || "[]");
+      let activeThreadId = null;
+      let ctxTargetId = null;
+
+      function saveThreads() { localStorage.setItem("mas_threads", JSON.stringify(threads.slice(0, 50))); }
+
+      function sortedThreads() {
+        const pinned = threads.filter((t) => t.pinned);
+        const rest = threads.filter((t) => !t.pinned);
+        return [...pinned, ...rest];
+      }
+
+      function createThread(ticker, companyName) {
+        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const thread = {
+          id,
+          ticker: ticker.toUpperCase(),
+          companyName,
+          label: null,
+          status: "running",
+          pinned: false,
+          rating: null,
+          messages: [],
+          filingsState: [],
+          latestResponse: null,
+          createdAt: new Date().toISOString(),
+        };
+        threads.unshift(thread);
+        saveThreads();
+        return thread;
+      }
+
+      function getThread(id) { return threads.find((t) => t.id === id) || null; }
+      function getActiveThread() { return getThread(activeThreadId); }
+
+      function deleteThread(id) {
+        threads = threads.filter((t) => t.id !== id);
+        saveThreads();
+        if (activeThreadId === id) {
+          activeThreadId = threads.length ? threads[0].id : null;
+          const t = getActiveThread();
+          if (t) restoreThreadMessages(t);
+          else { messagesEl.innerHTML = ""; setStatus("Waiting for task", false); headerSubtitle.textContent = ""; }
+        }
+        renderThreadList();
+      }
+
+      function renameThread(id, newName) {
+        const t = getThread(id);
+        if (t && newName.trim()) { t.label = newName.trim(); saveThreads(); renderThreadList(); }
+      }
+
+      function togglePin(id) {
+        const t = getThread(id);
+        if (t) { t.pinned = !t.pinned; saveThreads(); renderThreadList(); }
+      }
+
+      function duplicateThread(id) {
+        const src = getThread(id);
+        if (!src) return;
+        const copy = JSON.parse(JSON.stringify(src));
+        copy.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        copy.label = (src.label || src.companyName) + " (copy)";
+        copy.status = src.status === "running" ? "stopped" : src.status;
+        copy.pinned = false;
+        copy.createdAt = new Date().toISOString();
+        threads.unshift(copy);
+        saveThreads();
+        renderThreadList();
+      }
+
+      function shareThread(id) {
+        const t = getThread(id);
+        if (!t) return;
+        const r = t.latestResponse;
+        const summary = r
+          ? `${t.companyName} (${t.ticker}) — ${r.final_rating}\n${r.executive_summary || ""}`
+          : `${t.companyName} (${t.ticker}) — ${t.status}`;
+        navigator.clipboard.writeText(summary).then(() => {
+          setStatus("Summary copied to clipboard", false);
+          setTimeout(() => { const a = getActiveThread(); setStatus(a && a.status === "running" ? "Running..." : "Waiting for task", a && a.status === "running"); }, 1500);
+        });
+      }
+
+      // ===================== Thread Rendering =====================
+
+      function threadDisplayName(t) { return t.label || `${t.companyName} (${t.ticker})`; }
+
+      function threadDotClass(t) {
+        if (t.status === "running") return "";
+        if (t.status === "failed") return "failed";
+        if (t.status === "stopped") return "stopped";
+        return "idle";
+      }
+
+      function renderThreadList() {
+        const sorted = sortedThreads();
+        if (!sorted.length) { threadListEl.innerHTML = '<div class="empty">No research tasks yet.</div>'; return; }
+        threadListEl.innerHTML = sorted.map((t) => `
+          <div class="thread-item ${t.id === activeThreadId ? "active" : ""} ${t.pinned ? "pinned" : ""}" data-id="${t.id}">
+            <span class="thread-dot ${threadDotClass(t)}"></span>
+            <span class="thread-label">${escapeHtml(threadDisplayName(t))}</span>
+            <span class="thread-right">
+              <span class="thread-badge">${escapeHtml(t.rating || (t.status === "running" ? "..." : t.status === "stopped" ? "stopped" : ""))}</span>
+              <span class="thread-menu-btn" data-id="${t.id}" title="More actions">⋯</span>
+            </span>
+          </div>
+        `).join("");
+
+        threadListEl.querySelectorAll(".thread-item").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if (e.target.classList.contains("thread-menu-btn")) return;
+            switchThread(el.dataset.id);
+          });
+        });
+
+        threadListEl.querySelectorAll(".thread-menu-btn").forEach((btn) => {
+          btn.addEventListener("click", (e) => { e.stopPropagation(); openCtxMenu(btn.dataset.id, e); });
+        });
+      }
+
+      function switchThread(threadId) {
+        activeThreadId = threadId;
+        const thread = getActiveThread();
+        if (!thread) return;
+        renderThreadList();
+        restoreThreadMessages(thread);
+        updateStopButton();
+      }
+
+      function restoreThreadMessages(thread) {
+        messagesEl.innerHTML = "";
+        currentTicker = thread.ticker;
+        headerSubtitle.textContent = `${thread.ticker} · ${thread.companyName}`;
+        for (const msg of thread.messages) appendMessageRaw(msg.role, msg.label, msg.html, msg.options);
+        setStatus(
+          thread.status === "running" ? "Running..." : thread.status === "completed" ? "Research completed" : thread.status === "stopped" ? "Stopped" : "Waiting for task",
+          thread.status === "running"
+        );
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      // ===================== Context Menu =====================
+
+      function openCtxMenu(threadId, event) {
+        ctxTargetId = threadId;
+        const t = getThread(threadId);
+        ctxMenu.querySelector('[data-action="pin"]').textContent = t && t.pinned ? "Unpin" : "Pin to top";
+        ctxMenu.style.left = event.clientX + "px";
+        ctxMenu.style.top = event.clientY + "px";
+        ctxMenu.classList.add("open");
+      }
+
+      function closeCtxMenu() { ctxMenu.classList.remove("open"); ctxTargetId = null; }
+
+      document.addEventListener("click", closeCtxMenu);
+      ctxMenu.addEventListener("click", (e) => {
+        const item = e.target.closest(".ctx-item");
+        if (!item || !ctxTargetId) return;
+        const action = item.dataset.action;
+        const id = ctxTargetId;
+        closeCtxMenu();
+        if (action === "delete") deleteThread(id);
+        else if (action === "pin") togglePin(id);
+        else if (action === "copy") duplicateThread(id);
+        else if (action === "share") shareThread(id);
+        else if (action === "rename") startInlineRename(id);
+      });
+
+      function startInlineRename(id) {
+        const el = threadListEl.querySelector(`.thread-item[data-id="${id}"] .thread-label`);
+        if (!el) return;
+        const t = getThread(id);
+        const old = threadDisplayName(t);
+        el.innerHTML = `<input class="thread-rename-input" value="${escapeHtml(old)}" />`;
+        const inp = el.querySelector("input");
+        inp.focus();
+        inp.select();
+        const commit = () => { renameThread(id, inp.value || old); };
+        inp.addEventListener("blur", commit);
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } if (e.key === "Escape") renderThreadList(); });
+      }
+
+      // ===================== Utilities =====================
+
+      const _a = "&";
+      const _ESC_MAP = (() => { const m = {}; m[_a]=_a+"amp;"; m["<"]=_a+"lt;"; m[">"]=_a+"gt;"; m['"']=_a+"quot;"; m["'"]=_a+"#39;"; return m; })();
+      function escapeHtml(v) { return String(v ?? "").replace(/[&<>"']/g, (ch) => _ESC_MAP[ch] || ch); }
+
+      function setStatus(text, isRunning) { statusText.textContent = text; statusDot.classList.toggle("running", isRunning); }
+
+      function updateStopButton() {
+        const t = getActiveThread();
+        stopButton.style.display = (t && t.status === "running") ? "block" : "none";
+      }
+
+      function appendMessageRaw(role, label, html, options = {}) {
+        const wrapper = document.createElement("div");
+        wrapper.className = `message ${role}`;
+        const displayRole = label || (role === "user" ? "You" : "System");
+        wrapper.innerHTML = `<div class="message-role">${escapeHtml(displayRole)}</div><div class="${options.card ? "message-card" : "bubble"}">${html}</div>`;
+        messagesEl.appendChild(wrapper);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function appendMessage(role, agentLabel, html, options = {}, targetThreadId = null) {
+        const tid = targetThreadId || activeThreadId;
+        const thread = getThread(tid);
+        if (thread) { thread.messages.push({ role, label: agentLabel, html, options }); saveThreads(); }
+        if (tid === activeThreadId) appendMessageRaw(role, agentLabel, html, options);
+      }
+
+      function appendTextMessage(role, agentLabel, text, targetThreadId = null) {
+        appendMessage(role, agentLabel, escapeHtml(text).replaceAll("\n", "<br />"), {}, targetThreadId);
+      }
+
+      function resetConversation() { messagesEl.innerHTML = ""; }
+
+      function closeEventSource() { if (eventSource) { eventSource.close(); eventSource = null; } }
+
+      // ===================== Result Rendering =====================
+
+      function renderResultAsMessages(response, targetThreadId = null) {
+        const tid = targetThreadId || activeThreadId;
+        const reportJson = response.report_json || {};
+        const sections = reportJson.sections || {};
+        appendMessage("assistant", "Research Summary", `
+          <div class="meta-list">
+            <div class="meta-item"><div class="meta-key">Ticker</div><div class="meta-value">${escapeHtml(response.ticker)}</div></div>
+            <div class="meta-item"><div class="meta-key">Company</div><div class="meta-value">${escapeHtml(response.company_name)}</div></div>
+            <div class="meta-item"><div class="meta-key">Final Rating</div><div class="meta-value" style="font-size:var(--font-lg);color:var(--accent);font-weight:600;">${escapeHtml(response.final_rating)}</div></div>
+            <div class="meta-item"><div class="meta-key">Executive Summary</div><div class="meta-value">${escapeHtml(response.executive_summary || "")}</div></div>
+            <div class="meta-item"><div class="meta-key">Report Sections</div><div class="meta-value">${escapeHtml(Object.keys(sections).join(" / "))}</div></div>
+          </div>`, { card: true }, tid);
+
+        appendMessage("assistant", "InvestmentExpert", `
+          <div><strong>${escapeHtml(response.company_name)} (${escapeHtml(response.ticker)})</strong></div>
+          <div class="chips"><span class="chip" style="background:var(--accent-2);color:var(--text);">Final Rating: ${escapeHtml(response.final_rating)}</span></div>
+          <div class="report-box">${escapeHtml(response.executive_summary || "")}</div>`, { card: true }, tid);
+
+        if (response.report_markdown) {
+          const docxUrl = `/research/${encodeURIComponent(response.ticker)}/report.docx`;
+          appendMessage("assistant", "Full Report",
+            `<div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+               <div class="collapsible-toggle open" onclick="this.classList.toggle('open');this.parentElement.nextElementSibling.classList.toggle('open');">View Full Report</div>
+               <button onclick="window.open('${docxUrl}')" style="padding:4px 12px;font-size:var(--font-sm);">Download .docx</button>
+             </div>
+             <div class="collapsible-body open"><pre>${escapeHtml(response.report_markdown)}</pre></div>`, { card: true }, tid);
+        }
+        const jsonStr = JSON.stringify(response.report_json || {}, null, 2);
+        appendMessage("assistant", "JSON Data",
+          `<div class="collapsible-toggle" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">View Raw JSON</div>
+           <div class="collapsible-body"><pre>${escapeHtml(jsonStr)}</pre></div>`, { card: true }, tid);
+      }
+
+      function renderFilingsAsMessage(filingsState, targetThreadId = null) {
+        const tid = targetThreadId || activeThreadId;
+        if (!filingsState || !filingsState.length) {
+          appendMessage("assistant", "Filings", '<div class="empty">No effective filings found.</div>', { card: true }, tid);
+          return;
+        }
+        appendMessage("assistant", "Filings", `<div class="filing-list">${filingsState.map((f) => `
+          <div class="filing-item">
+            <div><strong>${escapeHtml(f.title || f.filing_type || "annual_report")}</strong></div>
+            <div class="chips">
+              <span class="chip">${escapeHtml(f.source_name || "unknown")}</span>
+              <span class="chip">${escapeHtml(f.filing_type || "")}</span>
+              <span class="chip">${escapeHtml(String(f.fiscal_year || ""))}</span>
+              <span class="chip">${escapeHtml(f.parse_status || "")}</span>
+            </div>
+            <div class="meta-value">File: ${escapeHtml(f.local_path || "Not saved")}</div>
+          </div>`).join("")}</div>`, { card: true }, tid);
+      }
+
+      function renderResultToThread(response, filings, threadId) {
+        renderResultAsMessages(response, threadId);
+        renderFilingsAsMessage(filings, threadId);
+      }
+
+      // ===================== Data Loading =====================
+
+      async function loadFilings(ticker) {
+        try { const r = await fetch(`/research/${encodeURIComponent(ticker)}/filings`); if (!r.ok) return []; return (await r.json()).filings || []; }
+        catch { return []; }
+      }
+
+      // ===================== Progress =====================
+
+      function summarizeDetails(step, d = {}) {
+        const L = [];
+        if (step === "company_profiler") {
+          L.push(`Filing layer: ${d.filing_status_label || "Unknown"}`);
+          L.push(`Effective filings: ${d.filing_count ?? 0}`);
+          L.push(`Profile source: ${d.profile_source || "unknown"}`);
+          if (d.warning_count) L.push(`Warnings: ${d.warning_count}`);
+        } else if (step === "filing_coverage_checker") {
+          L.push(`Overall coverage: ${d.overall_coverage ?? "n/a"}`);
+          if (d.covered_topics?.length) L.push(`Covered: ${d.covered_topics.join(", ")}`);
+          if (d.missing_topics?.length) L.push(`Missing: ${d.missing_topics.join(", ")}`);
+        } else if (step === "business_analyst") {
+          L.push(`Analysis: ${d.has_business_analysis ? "completed" : "skipped"}`);
+          if (d.is_group_company) L.push("Group company");
+          if (d.segment_count != null) L.push(`Segments: ${d.segment_count}`);
+        } else if (step === "culture_analyst") {
+          L.push(`Analysis: ${d.has_culture_analysis ? "completed" : "skipped"}`);
+          if (d.management_member_count != null) L.push(`Mgmt members: ${d.management_member_count}`);
+        } else if (step === "peer_analyzer") {
+          const total = (d.core_peer_count||0) + (d.secondary_peer_count||0) + (d.valuation_peer_count||0);
+          L.push(`Total peers: ${total}`);
+          if (d.core_peer_count) L.push(`Core: ${d.core_peer_count}`);
+          if (d.secondary_peer_count) L.push(`Secondary: ${d.secondary_peer_count}`);
+        } else if (step === "news_collector") {
+          L.push(`Company news: ${d.company_news_count ?? 0}`);
+          L.push(`Peer news: ${d.peer_news_count ?? 0}`);
+          L.push(`Events: ${d.event_count ?? 0}`);
+          if (d.sources?.length) L.push(`Sources: ${d.sources.join(", ")}`);
+        } else if (step === "financial_analyst") {
+          L.push(`Data source: ${d.provider_name || "unknown"}`);
+          L.push(`Years: ${d.years_count ?? 0}`);
+          if (d.red_flags?.length) L.push(`Red flags: ${d.red_flags.join("; ")}`);
+        } else if (step === "valuation_agent") {
+          L.push("Method: value_analysis + growth supplement");
+          if (d.primary_base != null) L.push(`Primary: ${d.primary_base}`);
+          if (d.growth_base != null) L.push(`Growth: ${d.growth_base}`);
+        } else if (step === "risk_analyst") {
+          L.push(`Overall risk: ${d.overall_risk_score ?? "n/a"}`);
+          if (d.recommendation) L.push(`Rec: ${d.recommendation}`);
+        } else if (step === "investment_expert") {
+          L.push(`Final rating: ${d.final_rating || "research_more"}`);
+        } else if (step === "report_coverage_checker") {
+          L.push(`Passed: ${d.passed ? "yes" : "no"}`);
+          if (d.warning_count) L.push(`Warnings: ${d.warning_count}`);
+        }
+        return L;
+      }
+
+      function handleProgress(data, targetThreadId) {
+        const step = data.step, status = data.status, payload = data.payload || {};
+        const agentName = AGENT_ROLES[step] || (payload.label || step);
+        if (status === "started") {
+          if (targetThreadId === activeThreadId) setStatus(`Running ${payload.label || step}`, true);
+          appendMessage("assistant", agentName, `<div><strong>${escapeHtml(payload.label || step)}</strong></div><div class="meta-value">Started</div>`, { card: true }, targetThreadId);
+          return;
+        }
+        const lines = summarizeDetails(step, payload.details || {});
+        if (payload.errors?.length) lines.push(...payload.errors);
+        appendMessage("assistant", agentName, `
+          <div><strong>${escapeHtml(payload.label || step)}</strong></div>
+          <div class="chips">${lines.map((l) => `<span class="chip">${escapeHtml(l)}</span>`).join("")}</div>`, { card: true }, targetThreadId);
+      }
+
+      // ===================== Stop / Pause =====================
+
+      function stopCurrentTask() {
+        closeEventSource();
+        const t = getActiveThread();
+        if (t && t.status === "running") {
+          t.status = "stopped";
+          saveThreads();
+          renderThreadList();
+          appendTextMessage("assistant", "System", "Research task stopped by user.");
+          setStatus("Stopped", false);
+        }
+        updateStopButton();
+      }
+
+      stopButton.addEventListener("click", stopCurrentTask);
+
+      // ===================== Run Research =====================
+
+      async function runResearch(ticker, companyName) {
+        closeEventSource();
+        const thread = createThread(ticker, companyName);
+        const threadId = thread.id;
+        activeThreadId = threadId;
+        renderThreadList();
+        resetConversation();
+        setStatus("Starting task", true);
+        updateStopButton();
+        headerSubtitle.textContent = `${ticker} · ${companyName}`;
+        currentTicker = ticker;
+        appendTextMessage("user", null, `Start research on ${companyName} (${ticker}).`, threadId);
+
+        eventSource = new EventSource(`/research/stream?ticker=${encodeURIComponent(ticker)}&company_name=${encodeURIComponent(companyName)}&model=${encodeURIComponent(document.getElementById("model-select").value)}`);
+        eventSource.addEventListener("started", () => {
+          if (threadId === activeThreadId) { setStatus("Research task started", true); updateStopButton(); }
+        });
+        eventSource.addEventListener("progress", (e) => handleProgress(JSON.parse(e.data), threadId));
+        eventSource.addEventListener("result", async (e) => {
+          const response = JSON.parse(e.data);
+          const t = getThread(threadId);
+          if (t) {
+            t.latestResponse = response;
+            t.rating = response.final_rating;
+            t.status = "completed";
+            saveThreads();
+            renderThreadList();
+          }
+          const filings = await loadFilings(response.ticker);
+          if (t) { t.filingsState = filings; saveThreads(); }
+          if (threadId === activeThreadId) {
+            setStatus("Research completed", false);
+            updateStopButton();
+            renderResultAsMessages(response, threadId);
+            renderFilingsAsMessage(filings, threadId);
+          } else {
+            renderResultToThread(response, filings, threadId);
+          }
+        });
+        eventSource.addEventListener("done", () => {
+          closeEventSource();
+          const t = getThread(threadId);
+          if (t && t.status === "running") { t.status = "completed"; saveThreads(); renderThreadList(); }
+          if (threadId === activeThreadId) { setStatus("Research completed", false); updateStopButton(); }
+        });
+        eventSource.addEventListener("error", (e) => {
+          closeEventSource();
+          const t = getThread(threadId);
+          if (t && t.status === "running") { t.status = "failed"; saveThreads(); renderThreadList(); }
+          if (threadId === activeThreadId) { setStatus("Task failed", false); updateStopButton(); }
+          appendTextMessage("assistant", null, "Task failed. Check the progress log above for details.", threadId);
+          try { const p = JSON.parse(e.data); if (p?.detail) appendTextMessage("assistant", null, `Error: ${p.detail}`, threadId); } catch {}
+        });
+      }
+
+      // ===================== Load Latest =====================
+
+      async function loadLatest() {
+        const ticker = tickerInput.value.trim();
+        if (!ticker) return;
+        closeEventSource();
+        const companyName = companyNameInput.value.trim() || ticker;
+        const thread = createThread(ticker, companyName);
+        activeThreadId = thread.id;
+        thread.status = "running";
+        renderThreadList();
+        resetConversation();
+        setStatus("Loading...", true);
+        currentTicker = ticker;
+        headerSubtitle.textContent = ticker;
+        updateStopButton();
+
+        const response = await fetch(`/research/${encodeURIComponent(ticker)}/latest`);
+        if (!response.ok) {
+          thread.status = "completed"; saveThreads(); renderThreadList();
+          appendTextMessage("assistant", null, "No latest research report found.");
+          setStatus("Waiting for task", false); updateStopButton(); return;
+        }
+        const data = await response.json();
+        thread.latestResponse = data;
+        thread.companyName = data.company_name;
+        thread.rating = data.final_rating;
+        thread.status = "completed";
+        headerSubtitle.textContent = `${data.ticker} · ${data.company_name}`;
+        setStatus("Latest report loaded", false);
+        updateStopButton();
+        const filings = await loadFilings(data.ticker);
+        thread.filingsState = filings;
+        saveThreads(); renderThreadList();
+        renderResultAsMessages(data);
+        renderFilingsAsMessage(filings);
+      }
+
+      // ===================== Follow-up Chat =====================
+
+      async function askFollowup() {
+        const ticker = tickerInput.value.trim() || currentTicker;
+        const message = chatInput.value.trim();
+        if (!ticker || !message) return;
+        appendTextMessage("user", null, message);
+        chatInput.value = "";
+        const r = await fetch("/research/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ticker, message }) });
+        if (!r.ok) { appendTextMessage("assistant", null, "No research report available for follow-up questions."); return; }
+        const payload = await r.json();
+        appendTextMessage("assistant", null, payload.answer || "Insufficient report information.");
+      }
+
+      // ===================== Thread Export / Import =====================
+
+      function exportThreads() {
+        const blob = new Blob([JSON.stringify(threads, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `mas_threads_${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        setStatus("Threads exported", false);
+      }
+
+      function importThreads(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const imported = JSON.parse(e.target.result);
+            if (!Array.isArray(imported)) { alert("Invalid file: expected a JSON array of threads."); return; }
+            const existingIds = new Set(threads.map((t) => t.id));
+            let added = 0;
+            for (const t of imported) {
+              if (t && t.id && !existingIds.has(t.id)) {
+                threads.push(t);
+                existingIds.add(t.id);
+                added++;
+              }
+            }
+            saveThreads();
+            renderThreadList();
+            setStatus(`Imported ${added} thread(s)`, false);
+          } catch (err) {
+            alert("Failed to parse file: " + err.message);
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      $("export-threads-btn").addEventListener("click", exportThreads);
+      $("import-threads-btn").addEventListener("click", () => $("import-file-input").click());
+      $("import-file-input").addEventListener("change", (e) => {
+        if (e.target.files[0]) importThreads(e.target.files[0]);
+        e.target.value = "";
+      });
+
+      // ===================== Event Bindings =====================
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const ticker = tickerInput.value.trim(), companyName = companyNameInput.value.trim();
+        if (!ticker || !companyName) return;
+        runButton.disabled = latestButton.disabled = true;
+        try { await runResearch(ticker, companyName); } finally { runButton.disabled = latestButton.disabled = false; }
+      });
+
+      latestButton.addEventListener("click", loadLatest);
+      chatButton.addEventListener("click", askFollowup);
+      chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askFollowup(); } });
+
+      // ===================== Init =====================
+
+      renderThreadList();
+      if (threads.length) {
+        activeThreadId = threads[0].id;
+        const t = getActiveThread();
+        if (t) { restoreThreadMessages(t); renderThreadList(); }
+      } else {
+        appendMessageRaw("assistant", null, escapeHtml("Hello! Run a research task first, then ask follow-up questions about the latest report."));
+      }
+    </script>
+  </body>
+</html>

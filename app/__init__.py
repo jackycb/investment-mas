@@ -1,0 +1,2 @@
+"""Investment MAS application package."""
+

@@ -1,4 +1,4 @@
-"""NewsCollector node."""
+"""NewsAnalyst node — V3: plan-driven news collection with optional skip."""
 
 from __future__ import annotations
 
@@ -9,8 +9,14 @@ from app.services.event_extraction_service import EventExtractionService
 from app.services.news_service import NewsService
 
 
-class NewsCollectorNode:
-    """Collect company and peer news, then extract events."""
+class NewsAnalystNode:
+    """Collect company and peer news, then extract events.
+
+    V3 additions:
+    - Reads skip/focus_areas from the research plan.
+    - When skip is set, returns empty news/event lists cleanly.
+    - focus_areas may limit topic scope for event extraction.
+    """
 
     def __init__(
         self,
@@ -25,6 +31,14 @@ class NewsCollectorNode:
         self.model = model
 
     def __call__(self, state: ResearchState) -> dict:
+        plan = state.get("research_plan", {})
+        news_cfg = plan.get("sections", {}).get("news_analysis", {})
+
+        if news_cfg.get("skip"):
+            return {"company_news": [], "peer_news": [], "event_list": []}
+
+        focus_areas = news_cfg.get("focus_areas", [])
+
         errors: list[str] = []
         try:
             company_news, peer_news = self.news_service.collect_news(
@@ -32,13 +46,16 @@ class NewsCollectorNode:
             )
         except Exception as exc:
             company_news, peer_news = [], []
-            errors.append(f"NewsCollector failed to collect news: {exc}")
+            errors.append(f"NewsAnalyst failed to collect news: {exc}")
         try:
             event_list = self.event_service.extract_events(company_news + peer_news, model=self.model)
         except Exception as exc:
             event_list = []
-            errors.append(f"NewsCollector failed to extract events: {exc}")
+            errors.append(f"NewsAnalyst failed to extract events: {exc}")
         result: dict = {"company_news": company_news, "peer_news": peer_news, "event_list": event_list}
         if errors:
-            result["errors"] = state.get("errors", []) + errors
+            result["errors"] = errors
         return result
+
+# Backward-compat alias
+NewsCollectorNode = NewsAnalystNode

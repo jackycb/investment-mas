@@ -18,7 +18,7 @@ def test_aliyun_llm_service_can_load_mas_style_config(tmp_path, monkeypatch) -> 
             {
                 "name": "百炼大模型",
                 "provider": "阿里",
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "base_url": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1",
                 "api_key": "test-key-from-json",
                 "model": "qwen-plus",
                 "temperature": 0.35,
@@ -37,7 +37,7 @@ def test_aliyun_llm_service_can_load_mas_style_config(tmp_path, monkeypatch) -> 
 
     assert service.available is True
     assert service.config.base_url.endswith("/compatible-mode/v1")
-    assert service.config.model == "qwen-plus"
+    assert service.config.model == "auto"
     assert service.config.api_key == "test-key-from-env"
     assert service.config.temperature == 0.2
 
@@ -77,7 +77,7 @@ def test_settings_auto_discover_dashscope_config_from_sibling_mas(tmp_path, monk
 
     old_file = llm_dir / "llm_old.json"
     old_file.write_text(
-        json.dumps({"api_key": "x", "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"}),
+        json.dumps({"api_key": "x", "base_url": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"}),
         encoding="utf-8",
     )
 
@@ -86,7 +86,7 @@ def test_settings_auto_discover_dashscope_config_from_sibling_mas(tmp_path, monk
         json.dumps(
             {
                 "api_key": "real-key",
-                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "base_url": "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1",
                 "model": "qwen-plus",
             }
         ),
@@ -269,3 +269,115 @@ def test_synthesize_report_returns_validated_payload() -> None:
 
     assert result is not None
     assert result["final_recommendation"]["final_rating"] == "watch"
+
+
+def _capture_chat_payload(service: AliyunLLMService, monkeypatch, **chat_kwargs) -> dict:
+    """Run service.chat() against a stubbed httpx client and return the sent payload."""
+
+    captured: dict[str, object] = {}
+
+    class _StubResponse:
+        status_code = 200
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            }
+
+    class _StubClient:
+        def __init__(self, *args, **kwargs) -> None:
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def post(self, url, headers=None, json=None):
+            captured["url"] = url
+            captured["payload"] = json or {}
+            return _StubResponse()
+
+    monkeypatch.setattr("app.services.aliyun_llm_service.httpx.Client", _StubClient)
+    service.chat([{"role": "user", "content": "hi"}], **chat_kwargs)
+    return captured["payload"]
+
+
+def test_auto_model_omits_temperature_param(monkeypatch) -> None:
+    """The token-plan "auto" router HTTP-400s on `temperature`; it must be omitted."""
+
+    service = AliyunLLMService(config=DashScopeLLMConfig(api_key="test", model="auto", temperature=0.2))
+
+    payload = _capture_chat_payload(service, monkeypatch)
+
+    assert payload["model"] == "auto"
+    assert "temperature" not in payload, "auto rejects temperature — sending it caused HTTP 400"
+
+
+def test_named_models_still_send_temperature(monkeypatch) -> None:
+    """Non-auto models accept temperature and must keep receiving it."""
+
+    service = AliyunLLMService(config=DashScopeLLMConfig(api_key="test", model="qwen3.8-max", temperature=0.2))
+
+    payload = _capture_chat_payload(service, monkeypatch)
+
+    assert payload["model"] == "qwen3.8-max"
+    assert payload["temperature"] == 0.2
+
+
+def test_explicit_auto_model_override_omits_temperature(monkeypatch) -> None:
+    """Passing model="auto" per-call also drops temperature even on a named default."""
+
+    service = AliyunLLMService(config=DashScopeLLMConfig(api_key="test", model="glm-5.3", temperature=0.2))
+
+    payload = _capture_chat_payload(service, monkeypatch, model="auto", temperature=0.15)
+
+    assert payload["model"] == "auto"
+    assert "temperature" not in payload
+
+
+def test_gateway_models_all_route_to_configured_base_url(monkeypatch) -> None:
+    """Every catalogued model — deepseek-* included — must stay on token-plan."""
+
+    monkeypatch.setattr(
+        "app.services.aliyun_llm_service.get_settings",
+        lambda: get_settings().model_copy(update={"enable_deepseek_direct_routing": False}),
+    )
+    gateway = DashScopeLLMConfig(api_key="test").base_url.rstrip("/")
+    service = AliyunLLMService(config=DashScopeLLMConfig(api_key="test", model="auto"))
+
+    for model in [
+        "auto", "qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "glm-5.3",
+        "deepseek-v4-pro", "deepseek-v4.1-flash",
+    ]:
+        base_url, api_key = service._resolve_provider(model)
+        assert base_url == gateway, f"{model} leaked out of the gateway -> {base_url}"
+        assert api_key == "test", f"{model} used the wrong credential"
+
+
+def test_deepseek_direct_routing_is_opt_in(monkeypatch) -> None:
+    """deepseek-* only leaves the gateway when the flag is explicitly enabled."""
+
+    service = AliyunLLMService(config=DashScopeLLMConfig(api_key="test", model="auto"))
+    monkeypatch.setattr(
+        "app.services.aliyun_llm_service.get_settings",
+        lambda: get_settings().model_copy(
+            update={
+                "enable_deepseek_direct_routing": True,
+                "deepseek_api_key": "dk-native",
+                "deepseek_base_url": "https://api.deepseek.com",
+            }
+        ),
+    )
+
+    base_url, api_key = service._resolve_provider("deepseek-chat")
+
+    assert base_url == "https://api.deepseek.com"
+    assert api_key == "dk-native"
+
+

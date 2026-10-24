@@ -116,6 +116,9 @@ Analysis principles:
 - Base your analysis only on the given evidence; do not fabricate names or facts
 - If evidence is insufficient, explicitly mark the field as "Insufficient information"
 - Management information must come from the input evidence; do not guess
+- Critically important: separate what is EVIDENCE-SUPPORTED (directly stated in filings) from what is INFERRED (reasonable deduction but not explicit)
+- Do NOT make strong positive governance claims if management stability, compensation, and incentive data are insufficient
+- List missing evidence explicitly so downstream report can flag governance data gaps
 
 {COMMON_JSON_RULES}"""
 
@@ -132,6 +135,10 @@ Analysis principles:
                 "task": """Please output JSON:
 {
   "core_judgement": "",
+  "evidence_supported_observations": [],
+  "inferred_observations": [],
+  "missing_evidence": [],
+  "governance_risks": [],
   "management_members": [
     {"name": "", "title": "", "background_summary": "", "stability_signal": ""}
   ],
@@ -146,6 +153,11 @@ Analysis principles:
 
 Field descriptions:
 - stability_signal: "stable" / "new" / "frequent_turnover" / "unknown"
+- evidence_supported_observations: Governance/culture facts directly stated in the filing evidence
+- inferred_observations: Reasonable deductions not directly stated (clearly label as inferred)
+- missing_evidence: What governance/culture data is NOT available but would be needed for a complete assessment (e.g., "Individual executive compensation not disclosed", "Board independence ratio unknown")
+- governance_risks: Risks arising from governance gaps or concerns found in evidence
+- core_judgement: Must reflect the strength of available evidence. If management stability, compensation, and incentives are all "Insufficient information", the core_judgement must NOT claim good governance — instead state that governance assessment is limited by data availability
 - If evidence is insufficient for a field, fill in "Insufficient information"
 """,
             }

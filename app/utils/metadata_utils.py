@@ -25,10 +25,18 @@ def json_safe(value: Any) -> Any:
     return value
 
 
+def _normalize_ticker_separators(text: str) -> str:
+    """Replace CJK / full-width period variants with ASCII ``.``."""
+
+    for ch in ("\u3002", "\uff0e", "\uff61"):  # 。 ． ｡
+        text = text.replace(ch, ".")
+    return text
+
+
 def infer_market_from_ticker(ticker: str) -> str:
     """Infer a normalized market code from project ticker format."""
 
-    text = ticker.strip().upper()
+    text = _normalize_ticker_separators(ticker.strip().upper())
     if "." not in text:
         return "US"
     prefix, _ = text.split(".", 1)
@@ -40,10 +48,11 @@ def normalize_ticker(ticker: str) -> str:
 
     Tickers that already have a recognized prefix (US/HK/SH/SZ) are
     returned as-is.  Pure-numeric tickers with 5–6 digits are treated
-    as HK stocks.
+    as HK stocks.  Chinese / full-width periods (e.g. ``HK。00700``) are
+    normalised to ASCII ``.``.
     """
 
-    text = ticker.strip().upper()
+    text = _normalize_ticker_separators(ticker.strip().upper())
     if "." in text:
         prefix = text.split(".", 1)[0]
         if prefix in {"US", "HK", "SH", "SZ"}:

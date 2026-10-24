@@ -25,10 +25,10 @@ class FilingCoverageCheckerNode:
         except Exception as exc:
             return {
                 "filing_coverage": {},
-                "errors": state.get("errors", []) + [f"FilingCoverageChecker failed: {exc}"],
+                "errors": [f"FilingCoverageChecker failed: {exc}"],
             }
         warnings = coverage.get("warnings", [])
         return {
             "filing_coverage": coverage,
-            "warnings": state.get("warnings", []) + warnings,
+            "warnings": warnings,
         }

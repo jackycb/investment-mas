@@ -247,7 +247,9 @@ class FilingService:
             "fiscal_year": filing.fiscal_year,
         }
         chunks = self.chunking_service.build_chunks(parsed, base_metadata)
+        logger.info("filing_chunking_completed", filing_id=filing.id, chunk_count=len(chunks), ticker=company.ticker)
         embeddings = self.embedding_service.embed_texts([item["text"] for item in chunks]) if chunks else []
+        logger.info("filing_embedding_completed", filing_id=filing.id, chunk_count=len(chunks), ticker=company.ticker)
         vector_payload: list[dict[str, Any]] = []
         for chunk, embedding in zip(chunks, embeddings, strict=False):
             row = FilingChunk(
@@ -285,7 +287,9 @@ class FilingService:
             )
         if self.vector_store is None:
             self.vector_store = build_default_vector_store()
+        logger.info("filing_vector_upsert_started", filing_id=filing.id, chunk_count=len(vector_payload), ticker=company.ticker)
         self.vector_store.upsert_chunks(vector_payload)
+        logger.info("filing_vector_upsert_completed", filing_id=filing.id, chunk_count=len(vector_payload), ticker=company.ticker)
         filing.parse_status = "parsed"
         filing.metadata_json = json_safe(
             {
@@ -321,7 +325,9 @@ class FilingService:
             "fiscal_year": filing.fiscal_year,
         }
         chunks = self.chunking_service.build_chunks(parsed, base_metadata)
+        logger.info("filing_chunking_completed", filing_id=filing.id, chunk_count=len(chunks), ticker=company.ticker)
         embeddings = self.embedding_service.embed_texts([item["text"] for item in chunks]) if chunks else []
+        logger.info("filing_embedding_completed", filing_id=filing.id, chunk_count=len(chunks), ticker=company.ticker)
         vector_payload: list[dict[str, Any]] = []
         for chunk, embedding in zip(chunks, embeddings, strict=False):
             row = FilingChunk(
@@ -359,7 +365,9 @@ class FilingService:
             )
         if self.vector_store is None:
             self.vector_store = build_default_vector_store()
+        logger.info("filing_reparse_vector_upsert_started", filing_id=filing.id, chunk_count=len(vector_payload), ticker=company.ticker)
         self.vector_store.upsert_chunks(vector_payload)
+        logger.info("filing_reparse_vector_upsert_completed", filing_id=filing.id, chunk_count=len(vector_payload), ticker=company.ticker)
         filing.parse_status = "parsed"
         filing.metadata_json = json_safe(
             {

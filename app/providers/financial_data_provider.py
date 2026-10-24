@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+import threading
 
 from sqlalchemy.orm import Session
 
@@ -11,12 +12,18 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.db.repositories.company_repository import get_company_by_ticker
 from app.db.repositories.financial_repository import get_annual_reports
+from app.services.compute_cache_service import CACHE_MARKET, cache_key, get_cache
 from app.services.futu_financial_download_service import FutuFinancialDownloadService
+from app.services.performance_tracker import SPAN_KIND_IO, record_cache_event, span
 from app.utils.file_discovery import discover_financial_files
 from app.utils.financial_mapping import finalize_financial_row, parse_numeric_value
 from app.utils.financial_parser import parse_financial_file
 
 logger = get_logger(__name__)
+
+# Serializes concurrent market fetches so parallel specialists warm one cache
+# instead of each paying the 5–11 s network cost for the same tickers.
+_YAHOO_FETCH_LOCK = threading.Lock()
 
 
 class FinancialDataProvider(ABC):
@@ -178,6 +185,27 @@ class LocalFinancialDataProvider(FinancialDataProvider):
             logger.warning("local_financial_parse_warnings", ticker=ticker, warnings=warnings[:10])
         return records
 
+    # Common dual-listed / alias ticker mappings (bidirectional)
+    _TICKER_ALIASES: dict[str, list[str]] = {
+        "HK.09988": ["US.BABA", "BABA"],
+        "US.BABA": ["HK.09988", "BABA"],
+        "BABA": ["HK.09988", "US.BABA"],
+        "HK.09618": ["US.JD", "JD"],
+        "US.JD": ["HK.09618", "JD"],
+        "JD": ["HK.09618", "US.JD"],
+        "HK.09888": ["US.BIDU", "BIDU"],
+        "US.BIDU": ["HK.09888", "BIDU"],
+        "HK.09999": ["US.NIO", "NIO"],
+        "US.NIO": ["HK.09999", "NIO"],
+        "HK.01024": ["US.KS", "KS"],
+        "HK.09961": ["US.GDS", "GDS"],
+        "HK.09633": ["US.NTES", "NTES"],
+        "US.NTES": ["HK.09633", "NTES"],
+        "HK.09896": ["US.BILI", "BILI"],
+        "US.BILI": ["HK.09896", "BILI"],
+        "HK.01138": ["HK.09988", "US.BABA", "BABA"],
+    }
+
     def _ticker_candidates(self, ticker: str) -> list[str]:
         """Return reasonable local-file ticker candidates for a user input ticker."""
 
@@ -188,6 +216,11 @@ class LocalFinancialDataProvider(FinancialDataProvider):
                 candidates.append(f"US.{normalized}")
             if normalized.isdigit() and len(normalized) <= 5:
                 candidates.append(f"HK.{normalized.zfill(5)}")
+
+        for alias in self._TICKER_ALIASES.get(normalized, []):
+            if alias not in candidates:
+                candidates.append(alias)
+
         return candidates
 
     def _attempt_download_refresh(
@@ -260,8 +293,147 @@ class DatabaseFinancialDataProvider(FinancialDataProvider):
         return {ticker: self.load_company_financials(ticker, ticker, years=years) for ticker in peer_tickers}
 
 
+def _to_yahoo_symbol(ticker: str) -> str | None:
+    """Convert project ticker (HK.09988, US.AMZN) to Yahoo Finance symbol."""
+    t = ticker.strip().upper()
+    if "." not in t:
+        return t if t.isalpha() else None
+    market, sym = t.split(".", 1)
+    if market == "HK":
+        return f"{int(sym):04d}.HK" if sym.isdigit() else f"{sym}.HK"
+    if market == "SH":
+        return f"{sym}.SS"
+    if market == "SZ":
+        return f"{sym}.SZ"
+    if market == "US":
+        return sym
+    if market == "JP":
+        return f"{sym}.T"
+    return None
+
+
+def fetch_yahoo_peer_financials(peer_tickers: list[str], *, force_refresh: bool = False) -> dict[str, list[dict]]:
+    """Fetch key financial metrics from Yahoo Finance for peer tickers.
+
+    Results are memoized per ticker in a short-TTL process cache. Measured
+    baseline for this call was 5.6–11.2 s for five peers, and a single research
+    run used to invoke it twice for nearly the same ticker set (once from
+    ``FinancialService.compare_peers``, once from ``PeerAnalystNode``), wasting
+    11–17 s of pure duplicate network I/O. Caching here fixes every call site at
+    once without changing the returned payload shape.
+
+    Empty results are cached too — a ticker Yahoo has no revenue data for will
+    not keep being retried inside the same run.
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("yfinance_not_installed")
+        return {}
+
+    ticker_map: dict[str, str] = {}
+    for t in peer_tickers:
+        yahoo_sym = _to_yahoo_symbol(t)
+        if yahoo_sym:
+            ticker_map[t] = yahoo_sym
+
+    if not ticker_map:
+        return {}
+
+    # One shared lock: parallel specialists warm a single cache instead of each
+    # paying the full network cost for overlapping ticker sets.
+    with _YAHOO_FETCH_LOCK:
+        return _fetch_yahoo_peer_financials_locked(
+            ticker_map, yf, requested=len(peer_tickers), force_refresh=force_refresh
+        )
+
+
+def _fetch_yahoo_peer_financials_locked(
+    ticker_map: dict[str, str], yf, *, requested: int, force_refresh: bool = False
+) -> dict[str, list[dict]]:
+    """Cache-aware Yahoo TTM fetch. Caller must hold ``_YAHOO_FETCH_LOCK``."""
+
+    cache = get_cache(CACHE_MARKET)
+    results: dict[str, list[dict]] = {}
+    misses: dict[str, str] = {}
+    for orig_ticker, yahoo_sym in ticker_map.items():
+        key = cache_key("yahoo_ttm", orig_ticker, yahoo_sym)
+        if not force_refresh:
+            cached = cache.get(key)
+            if cached is not None:
+                results[orig_ticker] = cached
+                record_cache_event(True)
+                continue
+        record_cache_event(False)
+        misses[orig_ticker] = yahoo_sym
+
+    if not misses:
+        logger.info("yahoo_peer_financials_cache_hit", requested=requested, cached=len(results))
+        return results
+
+    yahoo_symbols = " ".join(misses.values())
+    try:
+        batch = yf.Tickers(yahoo_symbols)
+    except Exception as exc:
+        logger.warning("yahoo_batch_init_failed", error=str(exc))
+        # Keep whatever was cached; do not poison the cache with failures.
+        for orig_ticker in misses:
+            results.setdefault(orig_ticker, [])
+        return results
+
+    with span("yahoo_peer_fetch", span_kind=SPAN_KIND_IO, skill_name="market_data"):
+        for orig_ticker, yahoo_sym in misses.items():
+            try:
+                info = batch.tickers[yahoo_sym].info
+                if not info or not info.get("totalRevenue"):
+                    results[orig_ticker] = []
+                    cache.set(cache_key("yahoo_ttm", orig_ticker, yahoo_sym), [])
+                    continue
+                record = {
+                    "ticker": orig_ticker,
+                    "company_name": info.get("shortName") or info.get("longName") or orig_ticker,
+                    "currency": info.get("financialCurrency") or info.get("currency") or "USD",
+                    "industry": info.get("industry"),
+                    "fiscal_year": None,
+                    "revenue": info.get("totalRevenue"),
+                    "revenue_growth": info.get("revenueGrowth"),
+                    "gross_margin": info.get("grossMargins"),
+                    "operating_margin": info.get("operatingMargins"),
+                    "net_margin": info.get("profitMargins"),
+                    "roe": info.get("returnOnEquity"),
+                    "roa": info.get("returnOnAssets"),
+                    "roic": None,
+                    "free_cash_flow": info.get("freeCashflow"),
+                    "operating_cash_flow": info.get("operatingCashflow"),
+                    "total_debt": info.get("totalDebt"),
+                    "total_cash": info.get("totalCash"),
+                    "debt_to_equity": info.get("debtToEquity"),
+                    "current_ratio": info.get("currentRatio"),
+                    "market_cap": info.get("marketCap"),
+                    "trailing_pe": info.get("trailingPE"),
+                    "forward_pe": info.get("forwardPE"),
+                    "price_to_book": info.get("priceToBook"),
+                    "earnings_growth": info.get("earningsGrowth"),
+                    "period_type": "ttm",
+                    "raw_source": {"source_kind": "yahoo_finance", "yahoo_symbol": yahoo_sym},
+                }
+                results[orig_ticker] = [record]
+                cache.set(cache_key("yahoo_ttm", orig_ticker, yahoo_sym), [record])
+            except Exception as exc:
+                logger.warning("yahoo_peer_fetch_failed", ticker=orig_ticker, yahoo_sym=yahoo_sym, error=str(exc))
+                results[orig_ticker] = []
+
+    logger.info(
+        "yahoo_peer_financials_fetched",
+        requested=requested,
+        fetched=sum(1 for v in results.values() if v),
+        cache_reused=requested - len(misses),
+    )
+    return results
+
+
 class HybridFinancialDataProvider(FinancialDataProvider):
-    """Local-first provider with database fallback."""
+    """Local-first provider with database and Yahoo Finance fallbacks."""
 
     def __init__(self, local_provider: LocalFinancialDataProvider, database_provider: DatabaseFinancialDataProvider) -> None:
         self.local_provider = local_provider
@@ -280,6 +452,13 @@ class HybridFinancialDataProvider(FinancialDataProvider):
             db_results = self.database_provider.load_peer_financials(missing, years=years)
             for ticker in missing:
                 results[ticker] = db_results.get(ticker, [])
+
+        still_missing = [ticker for ticker, rows in results.items() if not rows]
+        if still_missing:
+            yahoo_results = fetch_yahoo_peer_financials(still_missing)
+            for ticker in still_missing:
+                results[ticker] = yahoo_results.get(ticker, [])
+
         return results
 
 

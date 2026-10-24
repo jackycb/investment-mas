@@ -54,7 +54,7 @@ class CompanyProfileService:
             return MockCompanyInfoProvider()
         return MockCompanyInfoProvider()
 
-    def build_profile(self, session: Session, ticker: str, company_name: str, model: str | None = None) -> tuple[dict, list[dict], Company | None]:
+    def build_profile(self, session: Session, ticker: str, company_name: str, model: str | None = None, skip_ingestion: bool = False) -> tuple[dict, list[dict], Company | None]:
         """Return profile and peers, preferring stored data when available."""
 
         company_name = get_canonical_company_name(ticker, company_name)
@@ -79,7 +79,7 @@ class CompanyProfileService:
         if should_short_circuit:
             return self._profile_from_row(stored_profile), self._peers_from_rows(stored_peers), company
 
-        profile, evidence_bundle, warnings = self.rag_service.build(session, company, model=model)
+        profile, evidence_bundle, warnings = self.rag_service.build(session, company, model=model, skip_ingestion=skip_ingestion)
         if profile is None:
             profile = WebCompanyInfoProvider().get_company_profile(ticker, company_name)
             profile["as_of_date"] = profile.get("as_of_date", date.today().isoformat())

@@ -108,7 +108,7 @@ def test_company_knowledge_retriever_lexical_retrieval(session) -> None:
 
 
 class _FakeRAGService:
-    def build(self, session, company, model=None):
+    def build(self, session, company, model=None, skip_ingestion=False):
         return (
             {
                 "company_name": company.company_name,

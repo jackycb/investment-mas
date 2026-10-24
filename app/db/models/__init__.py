@@ -3,6 +3,7 @@
 from app.db.models.company import Company, CompanyProfile, PeerMapping
 from app.db.models.document import CompanyDocument, DocumentChunk
 from app.db.models.evidence import EvidenceSpan
+from app.db.models.execution import NodeExecution
 from app.db.models.filing import Filing, FilingChunk
 from app.db.models.financial import FinancialPeerSnapshot, FinancialReport
 from app.db.models.management import IncentiveRecord, ManagementProfile
@@ -28,6 +29,7 @@ __all__ = [
     "ManagementProfile",
     "NewsArticle",
     "NewsEvent",
+    "NodeExecution",
     "ReportSession",
     "ResearchReport",
     "RiskAssessment",

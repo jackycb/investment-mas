@@ -56,7 +56,13 @@ class PeerAnalysisService:
             import json
 
             candidates = [
-                {"ticker": p.get("ticker"), "company_name": p.get("company_name"), "peer_type": p.get("peer_type", "core")}
+                {
+                    "ticker": p.get("ticker"),
+                    "company_name": p.get("company_name"),
+                    "peer_type": p.get("peer_type", "core"),
+                    "source": p.get("source", ""),
+                    "similarity_score": p.get("similarity_score"),
+                }
                 for p in peer_list[:15]
             ]
 

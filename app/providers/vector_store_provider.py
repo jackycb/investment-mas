@@ -136,9 +136,8 @@ class ChromaVectorStoreProvider(VectorStoreProvider):
 def build_default_vector_store() -> VectorStoreProvider:
     """Build the configured vector store.
 
-    Runtime filing ingestion must not silently drop vectors. Use
-    ``VECTOR_STORE_TYPE=none`` explicitly in tests/dev experiments if a no-op
-    provider is desired.
+    When VECTOR_STORE_TYPE=none, returns a NullVectorStoreProvider so callers
+    fall through to keyword-based chunk retrieval from PostgreSQL.
     """
 
     store_type = settings.vector_store_type.lower()

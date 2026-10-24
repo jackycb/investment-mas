@@ -11,6 +11,9 @@ class ResearchRunRequest(BaseModel):
     ticker: str
     company_name: str
     model: str | None = None
+    #: Bypass section-cache reuse and computation caches for this run (§6.5).
+    #: Defaults to False so existing clients keep the current behaviour.
+    force_refresh: bool = False
 
 
 class ResearchRunResponse(BaseModel):
@@ -77,3 +80,95 @@ class FeedbackResponse(BaseModel):
     refined_content: str = ""
     additional_evidence_count: int = 0
     feedback_resolution: str = ""
+
+
+class PrewarmRequest(BaseModel):
+    """Trigger background filing ingestion."""
+
+    ticker: str
+    company_name: str
+    peers: list[str] = []
+
+
+class PrewarmResponse(BaseModel):
+    """Prewarm result."""
+
+    ticker: str
+    filings_ingested: int = 0
+    warnings: list[str] = []
+    status: str = "completed"
+
+
+class RefreshPeersRequest(BaseModel):
+    """Refresh peer candidates and metrics."""
+
+    ticker: str
+    company_name: str
+
+
+class RefreshPeersResponse(BaseModel):
+    """Refresh peers result."""
+
+    ticker: str
+    peer_count: int = 0
+    peers_with_metrics: int = 0
+    peer_candidates: list[dict[str, Any]] = []
+    warnings: list[str] = []
+
+
+class RerunSectionRequest(BaseModel):
+    """Rerun a single report section."""
+
+    ticker: str
+    section_name: str
+    feedback_text: str = ""
+
+
+class RerunSectionResponse(BaseModel):
+    """Section rerun result."""
+
+    ticker: str
+    section_name: str
+    refined_content: str = ""
+    impacted_sections: list[str] = []
+
+
+class PerformanceRunSummary(BaseModel):
+    """One persisted research run (optimization task §10 telemetry).
+
+    Every field is measured from ``node_executions`` rows; nothing is estimated.
+    """
+
+    task_id: str
+    ticker: str = ""
+    started_at: str | None = None
+    completed_at: str | None = None
+    total_duration_ms: float | None = None
+    node_count: int = 0
+    serial_sum_ms: float = 0.0
+    parallelism: dict[str, Any] = {}
+    slowest_nodes: list[dict[str, Any]] = []
+    skills: list[dict[str, Any]] = []
+    llm_call_count: int = 0
+    total_tokens: int = 0
+    cache_hits: int = 0
+    retry_count: int = 0
+    failed_nodes: list[str] = []
+    skipped_nodes: list[str] = []
+    error_types: list[str] = []
+
+
+class PerformanceHistoryResponse(BaseModel):
+    """Per-run performance history plus a repeat-run comparison."""
+
+    ticker: str
+    run_count: int = 0
+    runs: list[PerformanceRunSummary] = []
+    #: ``None`` until at least two runs exist for the ticker.
+    comparison: dict[str, Any] | None = None
+
+
+class RunPerformanceDetailResponse(PerformanceRunSummary):
+    """Full span-level detail for a single run."""
+
+    spans: list[dict[str, Any]] = []

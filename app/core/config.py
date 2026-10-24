@@ -69,11 +69,16 @@ class Settings(BaseSettings):
     company_info_provider: str = "web"
     dashscope_api_key: str | None = None
     dashscope_config_path: str | None = Field(default_factory=_default_dashscope_config_path)
-    dashscope_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    dashscope_model: str = "qwen-plus"
+    dashscope_base_url: str = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
+    dashscope_model: str = "auto"  # Available: auto, qwen3.8-max, qwen3.8-flash, qwen3.7-plus, deepseek-v4.1-flash, deepseek-v4-pro, glm-5.3
     dashscope_temperature: float = 0.2
     dashscope_max_tokens: int | None = None
     dashscope_timeout_seconds: float = 120.0
+    # The token-plan gateway also serves the ``deepseek-*`` models, so a model
+    # name is no longer enough to prove a request must leave token-plan. Set this
+    # to true only if you want ``deepseek-*`` to bypass token-plan and call the
+    # native api.deepseek.com endpoint with DEEPSEEK_API_KEY instead.
+    enable_deepseek_direct_routing: bool = False
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_timeout_seconds: float = 120.0
@@ -100,6 +105,16 @@ class Settings(BaseSettings):
     vector_store_dir: str = str(DATA_ROOT / "vector_store")
     default_embedding_provider: str = "local_hash"
     enable_filing_ingestion: bool = True
+    # --- Optimization controls (task §5 / §6 / §10) -------------------------
+    # Run independent specialists concurrently instead of one after another.
+    enable_parallel_specialists: bool = True
+    # Upper bound for the specialist thread pool. Four matches the number of
+    # specialist branches; LLM providers are the real concurrency limit.
+    max_parallel_workers: int = 4
+    # Reuse a valid cached section instead of recomputing it (§6.4 / §6.5).
+    enable_section_cache_reuse: bool = True
+    # Record per-node/per-skill timing into node_executions (§10).
+    enable_performance_tracking: bool = True
     enable_market_us: bool = True
     enable_market_hk: bool = True
     enable_market_cn: bool = True

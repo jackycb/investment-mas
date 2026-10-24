@@ -13,6 +13,7 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 CANONICAL_COMPANY_NAMES = {
+    "HK.00700": "Tencent",
     "HK.00883": "CNOOC",
     "PDD": "PDD Holdings",
     "US.PDD": "PDD Holdings",
@@ -25,16 +26,17 @@ CANONICAL_COMPANY_NAMES = {
 }
 
 
-def get_canonical_company_name(ticker: str, company_name: str) -> str:
+def get_canonical_company_name(ticker: str, company_name: str | None) -> str:
     """Return a canonical company name for well-known tickers, overriding obvious typos."""
 
     normalized_ticker = ticker.strip().upper()
     canonical = CANONICAL_COMPANY_NAMES.get(normalized_ticker)
     if canonical:
         return canonical
-    if normalized_ticker.startswith("US.") and company_name.strip().upper() == normalized_ticker.split(".", 1)[1]:
+    name = (company_name or "").strip()
+    if normalized_ticker.startswith("US.") and name.upper() == normalized_ticker.split(".", 1)[1]:
         return normalized_ticker.split(".", 1)[1]
-    return company_name.strip()
+    return name
 
 
 CURATED_COMPANY_PROFILES = {
@@ -86,6 +88,22 @@ CURATED_PEERS = {
     "HK.09988": [
         {"ticker": "HK.09618", "company_name": "JD.com", "peer_type": "core", "similarity_score": 0.85},
         {"ticker": "HK.03690", "company_name": "Meituan", "peer_type": "secondary", "similarity_score": 0.70},
+    ],
+    "HK.09618": [
+        {"ticker": "HK.09988", "company_name": "Alibaba", "peer_type": "core", "similarity_score": 0.85},
+        {"ticker": "HK.03690", "company_name": "Meituan", "peer_type": "secondary", "similarity_score": 0.72},
+    ],
+    "JD": [
+        {"ticker": "BABA", "company_name": "Alibaba", "peer_type": "core", "similarity_score": 0.85},
+        {"ticker": "PDD", "company_name": "PDD Holdings", "peer_type": "secondary", "similarity_score": 0.74},
+    ],
+    "US.JD": [
+        {"ticker": "BABA", "company_name": "Alibaba", "peer_type": "core", "similarity_score": 0.85},
+        {"ticker": "PDD", "company_name": "PDD Holdings", "peer_type": "secondary", "similarity_score": 0.74},
+    ],
+    "HK.03690": [
+        {"ticker": "HK.09988", "company_name": "Alibaba", "peer_type": "core", "similarity_score": 0.78},
+        {"ticker": "HK.09618", "company_name": "JD.com", "peer_type": "secondary", "similarity_score": 0.72},
     ],
     "PDD": [
         {"ticker": "BABA", "company_name": "Alibaba", "peer_type": "core", "similarity_score": 0.83},
@@ -263,7 +281,7 @@ class WebCompanyInfoProvider(CompanyInfoProvider):
         normalized_ticker = ticker.upper()
         if normalized_ticker in {"NVDA", "US.NVDA", "AMD", "QCOM", "TSM", "US.TSM"}:
             return ["semiconductor"]
-        if normalized_ticker in {"PDD", "US.PDD", "BABA", "JD", "HK.09988"}:
+        if normalized_ticker in {"PDD", "US.PDD", "BABA", "JD", "US.JD", "HK.09988", "HK.09618", "HK.03690"}:
             return ["internet_platform"]
         if normalized_ticker in {"US.META", "META", "HK.00700"}:
             return ["social_media"]

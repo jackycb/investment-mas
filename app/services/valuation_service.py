@@ -69,13 +69,21 @@ class ValuationService:
             | {"quality_adjustment": quality_adjustment, "growth_scalar": growth_scalar, "sector_bonus": sector_bonus},
         }
 
-    def blended_valuation(self, value_result: dict, growth_result: dict) -> dict:
-        """Blend primary value analysis and growth framework into one scenario."""
+    def blended_valuation(self, value_result: dict, growth_result: dict, epv_available: bool = False) -> dict:
+        """Blend primary value analysis and growth framework into one scenario.
+
+        When EPV is available it is the baseline — weight 80% EPV + 20% growth.
+        When EPV is not available, use 50/50 blend of simple multiples + growth.
+        """
+        if epv_available:
+            w_epv, w_growth = 0.80, 0.20
+        else:
+            w_epv, w_growth = 0.50, 0.50
 
         return {
-            "bull": (value_result["bull"] + growth_result["bull"]) / 2,
-            "base": (value_result["base"] + growth_result["base"]) / 2,
-            "bear": (value_result["bear"] + growth_result["bear"]) / 2,
+            "bull": value_result["bull"] * w_epv + growth_result["bull"] * w_growth,
+            "base": value_result["base"] * w_epv + growth_result["base"] * w_growth,
+            "bear": value_result["bear"] * w_epv + growth_result["bear"] * w_growth,
         }
 
     def _to_per_share(self, scenario: dict, shares: float, fx_rate: float) -> dict:
@@ -91,7 +99,11 @@ class ValuationService:
     def _integrated_per_share(
         self, model_per_share: dict, supplemental: dict | None
     ) -> dict:
-        """Blend model per-share with supplemental EPV per-share (weight 40/60)."""
+        """Integrate model per-share with supplemental EPV per-share.
+
+        EPV is the baseline — when available it dominates (80% EPV + 20% model).
+        Growth valuation only serves as a cross-check reference.
+        """
         if not supplemental or supplemental.get("status") != "ok":
             return model_per_share
         sup_lower = supplemental.get("lower_price_limit")
@@ -101,7 +113,7 @@ class ValuationService:
             return model_per_share
         if not all(model_per_share.get(k) for k in ("bull", "base", "bear")):
             return {"bull": sup_upper, "base": sup_mid, "bear": sup_lower}
-        w_model, w_epv = 0.4, 0.6
+        w_model, w_epv = 0.2, 0.8
         return {
             "bull": round(model_per_share["bull"] * w_model + sup_upper * w_epv, 2),
             "base": round(model_per_share["base"] * w_model + sup_mid * w_epv, 2),
@@ -136,12 +148,13 @@ class ValuationService:
             value_result = self.value_investing_valuation(financial_summary)
 
         growth_result = self.growth_stock_valuation(financial_summary, peer_comparison, company_profile=company_profile)
-        blended_total = self.blended_valuation(value_result, growth_result)
+        epv_available = supplemental is not None and supplemental.get("status") == "ok"
+        blended_total = self.blended_valuation(value_result, growth_result, epv_available=epv_available)
 
         shares = 0.0
         fx_rate = 1.0
         quote_currency = "CNY"
-        if supplemental and supplemental.get("status") == "ok":
+        if epv_available:
             shares = float(supplemental.get("summary", {}).get("total_shares") or 0)
             fx_rate = float(supplemental.get("fx_rate") or 1.0)
             quote_currency = supplemental.get("quote_currency") or "CNY"
@@ -154,6 +167,12 @@ class ValuationService:
             integrated = blended_total
 
         has_per_share = shares > 0
+        if epv_available:
+            blend_desc = "EPV is the baseline valuation (80% weight). Growth valuation is for reference only (20% weight)."
+            method_desc = "Primary valuation: EPV (Earnings Power Value) from run_value_analysis_by_code."
+        else:
+            blend_desc = "Blended valuation is 50/50 average of value-multiples and growth valuation."
+            method_desc = "Primary valuation: value-multiples approach (EPV data not available)."
         result = {
             "value_investing": {k: value_result[k] for k in ("bull", "base", "bear")},
             "primary_value": {k: value_result[k] for k in ("bull", "base", "bear")},
@@ -164,10 +183,12 @@ class ValuationService:
             "shares_outstanding": shares if has_per_share else None,
             "fx_rate": fx_rate if has_per_share else None,
             "is_per_share": has_per_share,
+            "epv_available": epv_available,
+            "valuation_method": "epv_baseline" if epv_available else "multiples_blend",
             "commentary": [
-                "Primary valuation method prioritizes value analysis results from run_value_analysis_by_code.",
-                "Growth stock valuation serves as a supplement, adjusted for revenue scale, growth rate, and earnings quality.",
-                "Blended valuation is the average of primary and growth valuations." if not has_per_share else "Blended valuation is output on a per-share basis; primary valuation takes priority over growth valuation.",
+                method_desc,
+                "Growth stock valuation serves as a reference, adjusted for revenue scale, growth rate, and earnings quality.",
+                blend_desc,
             ],
         }
         if supplemental:
@@ -197,6 +218,7 @@ class ValuationService:
         assumptions = {
             "value_investing": value_result["assumptions"],
             "growth": growth_result["assumptions"],
+            "blend_weights": "EPV 80% + growth 20%" if epv_available else "value 50% + growth 50%",
         }
         if supplemental:
             assumptions["legacy_value_analysis"] = {
@@ -206,7 +228,7 @@ class ValuationService:
                 "quote_currency": supplemental.get("quote_currency"),
                 "fx_rate": fx_rate,
                 "shares_outstanding": shares if shares > 0 else None,
-                "blend_weights": "model 40% + EPV 60%" if supplemental.get("status") == "ok" else None,
+                "blend_weights": "EPV 80% (baseline) + model 20% (per-share integration)" if epv_available else None,
             }
         return result, assumptions
 

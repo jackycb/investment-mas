@@ -18,10 +18,10 @@ class ReportCoverageCheckerNode:
         except Exception as exc:
             return {
                 "report_coverage": {},
-                "errors": state.get("errors", []) + [f"ReportCoverageChecker failed: {exc}"],
+                "errors": [f"ReportCoverageChecker failed: {exc}"],
             }
         warnings = result.get("warnings", [])
         return {
             "report_coverage": result,
-            "warnings": state.get("warnings", []) + warnings,
+            "warnings": warnings,
         }

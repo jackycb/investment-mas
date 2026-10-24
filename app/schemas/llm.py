@@ -15,9 +15,9 @@ class DashScopeLLMConfig(BaseModel):
 
     name: str = "DashScope"
     provider: str = "openai-compatible"
-    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    base_url: str = "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1"
     api_key: str = ""
-    model: str = "qwen-plus"
+    model: str = "auto"  # Available: auto, qwen3.8-max, qwen3.8-flash, qwen3.7-plus, deepseek-v4.1-flash, deepseek-v4-pro, glm-5.3
     temperature: float = 0.2
     timeout_seconds: float = 120.0
     max_tokens: int | None = None
@@ -46,9 +46,9 @@ class DashScopeLLMConfig(BaseModel):
         return cls(
             name=str(payload.get("name", "DashScope")),
             provider=str(payload.get("provider", "openai-compatible")),
-            base_url=str(payload.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")),
+            base_url=str(payload.get("base_url", "https://token-plan.maas.qianwenaiapi.com/compatible-mode/v1")),
             api_key=str(payload.get("api_key", "")),
-            model=str(payload.get("model", "qwen-plus")),
+            model=str(payload.get("model", "auto")),
             temperature=float(payload.get("temperature", 0.2)),
             timeout_seconds=float(payload.get("timeout_seconds", get_settings().dashscope_timeout_seconds)),
             max_tokens=payload.get("max_tokens"),

@@ -25,6 +25,7 @@ from app.services.llm_prompt_templates import (
     build_news_analysis_messages,
     build_peer_explanation_messages,
 )
+from app.services.performance_tracker import STATUS_RETRYING, record_llm_call, record_retry
 
 logger = get_logger(__name__)
 
@@ -32,14 +33,22 @@ logger = get_logger(__name__)
 class AliyunLLMService:
     """Multi-provider LLM service supporting Alibaba DashScope and DeepSeek.
 
-    Models starting with ``deepseek-`` are routed to DeepSeek's API;
-    all other models go through DashScope's OpenAI-compatible endpoint.
+    All models go through the configured gateway (``dashscope_base_url``),
+    which serves the Qwen, DeepSeek and GLM catalogue alike. Only when
+    ``enable_deepseek_direct_routing`` is turned on are ``deepseek-*`` models
+    sent to DeepSeek's own API instead.
     The service can load configuration directly from local environment
     variables or from a MAS-style ``llm_config`` JSON file.
     """
 
     # Model prefixes that route to the DeepSeek provider
     _DEEPSEEK_PREFIX = "deepseek-"
+
+    # Models that reject the ``temperature`` request parameter outright.
+    # The token-plan ``auto`` router picks the concrete model server-side and
+    # answers HTTP 400 ("auto does not support parameter(s): temperature")
+    # whenever temperature is sent, so it must be omitted for these models.
+    _NO_TEMPERATURE_MODELS = frozenset({"auto"})
 
     def __init__(
         self,
@@ -67,6 +76,8 @@ class AliyunLLMService:
             overrides["timeout_seconds"] = timeout_seconds
         self.config = resolved.model_copy(update=overrides)
         self.config.base_url = self.config.base_url.rstrip("/")
+        # Populated by chat() from the provider's `usage` block. Telemetry only.
+        self.last_usage: dict[str, Any] = {}
 
     @classmethod
     def from_config_file(cls, path: str | Path) -> "AliyunLLMService":
@@ -93,7 +104,10 @@ class AliyunLLMService:
 
         settings = get_settings()
         effective_model = model or self.config.model
-        if effective_model.startswith(self._DEEPSEEK_PREFIX):
+        if (
+            settings.enable_deepseek_direct_routing
+            and effective_model.startswith(self._DEEPSEEK_PREFIX)
+        ):
             deepseek_key = settings.deepseek_api_key
             if not deepseek_key:
                 raise RuntimeError(
@@ -117,8 +131,11 @@ class AliyunLLMService:
             return None
 
         effective_model = model or self.config.model
-        # DeepSeek models can be slower — use a generous timeout
-        if effective_model.startswith(self._DEEPSEEK_PREFIX):
+        # Native DeepSeek calls can be slower — use a generous timeout for them.
+        if (
+            get_settings().enable_deepseek_direct_routing
+            and effective_model.startswith(self._DEEPSEEK_PREFIX)
+        ):
             timeout = get_settings().deepseek_timeout_seconds
         else:
             timeout = self.config.timeout_seconds
@@ -127,8 +144,10 @@ class AliyunLLMService:
         payload = {
             "model": effective_model,
             "messages": messages,
-            "temperature": temperature if temperature is not None else self.config.temperature,
         }
+        # Some models (e.g. the "auto" router) reject `temperature` entirely.
+        if effective_model not in self._NO_TEMPERATURE_MODELS:
+            payload["temperature"] = temperature if temperature is not None else self.config.temperature
         if self.config.max_tokens is not None:
             payload["max_tokens"] = self.config.max_tokens
         headers = {
@@ -138,29 +157,57 @@ class AliyunLLMService:
 
         last_error: Exception | None = None
         for attempt in range(2):
+            started = time.perf_counter()
             try:
                 with httpx.Client(timeout=timeout) as client:
                     response = client.post(url, headers=headers, json=payload)
                     response.raise_for_status()
                     body = response.json()
-                return body["choices"][0]["message"]["content"]
+                content = body["choices"][0]["message"]["content"]
+                # Token accounting is additive telemetry only: the returned
+                # value and the retry semantics are unchanged.
+                usage = body.get("usage") or {}
+                self.last_usage = dict(usage)
+                record_llm_call(
+                    model=effective_model,
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    prompt_tokens=int(usage.get("prompt_tokens") or 0),
+                    completion_tokens=int(usage.get("completion_tokens") or 0),
+                    total_tokens=int(usage.get("total_tokens") or 0),
+                )
+                return content
             except httpx.HTTPStatusError as exc:
                 last_error = exc
+                self._record_llm_failure(effective_model, started, exc)
                 if exc.response.status_code in {429, 500, 502, 503, 504} and attempt == 0:
                     logger.warning("llm_chat_retry", attempt=attempt + 1, status_code=exc.response.status_code, model=effective_model)
+                    record_retry()
                     time.sleep(2)
                     continue
                 raise
             except (httpx.TimeoutException, httpx.ConnectError) as exc:
                 last_error = exc
+                self._record_llm_failure(effective_model, started, exc)
                 if attempt == 0:
                     logger.warning("llm_chat_retry", attempt=attempt + 1, error=str(exc), model=effective_model)
+                    record_retry()
                     time.sleep(2)
                     continue
                 raise
         if last_error:
             raise last_error
         return None
+
+    def _record_llm_failure(self, model: str, started: float, exc: Exception) -> None:
+        """Record a failed LLM round-trip without altering control flow."""
+
+        status_code = getattr(getattr(exc, "response", None), "status_code", None)
+        record_llm_call(
+            model=model,
+            duration_ms=(time.perf_counter() - started) * 1000,
+            status=STATUS_RETRYING,
+            error_type=f"{type(exc).__name__}:{status_code}" if status_code else type(exc).__name__,
+        )
 
     def chat_json(self, messages: list[dict[str, Any]], temperature: float | None = None, model: str | None = None) -> dict[str, Any] | None:
         """Send a chat request and parse the response as a JSON object."""

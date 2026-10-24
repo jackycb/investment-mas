@@ -1,16 +1,31 @@
 """Research workflow state definitions."""
 
-from typing import TypedDict
+import operator
+from typing import Annotated, TypedDict
 
 from app.providers.company_info_provider import get_canonical_company_name
 from app.utils.metadata_utils import normalize_ticker
 
 
+def _merge_lists(left: list, right: list) -> list:
+    """Reducer that concatenates lists for parallel branch outputs."""
+
+    return list(left) + list(right)
+
+
 class ResearchState(TypedDict, total=False):
-    """Shared state flowing through the research workflow."""
+    """Shared state flowing through the research workflow.
+
+    Fields written by parallel branches use Annotated with a list reducer
+    so LangGraph can merge concurrent updates.
+    """
 
     ticker: str
     company_name: str
+    _context: dict
+    research_plan: dict
+    data_availability: dict
+    fetch_results: dict
     company_profile: dict
     peer_list: list[dict]
     filing_coverage: dict
@@ -31,8 +46,10 @@ class ResearchState(TypedDict, total=False):
     final_report: str
     final_rating: str
     report_json: dict
-    errors: list[str]
-    warnings: list[str]
+    #: Set by callers that must bypass section/compute caches (§6.5 rule 3).
+    force_refresh: bool
+    errors: Annotated[list[str], _merge_lists]
+    warnings: Annotated[list[str], _merge_lists]
 
 
 def create_initial_state(ticker: str, company_name: str) -> ResearchState:
@@ -43,6 +60,10 @@ def create_initial_state(ticker: str, company_name: str) -> ResearchState:
     return ResearchState(
         ticker=ticker,
         company_name=canonical_company_name,
+        _context={},
+        research_plan={},
+        data_availability={},
+        fetch_results={},
         company_profile={},
         peer_list=[],
         filing_coverage={},
@@ -63,6 +84,7 @@ def create_initial_state(ticker: str, company_name: str) -> ResearchState:
         final_report="",
         final_rating="research_more",
         report_json={},
+        force_refresh=False,
         errors=[],
         warnings=[],
     )

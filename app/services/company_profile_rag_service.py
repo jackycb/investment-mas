@@ -61,23 +61,35 @@ class CompanyProfileRAGService:
         session: Session,
         company: Company,
         model: str | None = None,
+        skip_ingestion: bool = False,
     ) -> tuple[dict[str, Any] | None, dict[str, list[dict[str, Any]]], list[str]]:
-        """Ingest filings if needed, retrieve topic evidence, and synthesize profile."""
+        """Ingest filings if needed, retrieve topic evidence, and synthesize profile.
+
+        When *skip_ingestion* is True the node uses whatever filings are already
+        indexed and never triggers discovery/download/parse.  This is the default
+        for online research runs — ingestion moves to /research/prewarm.
+        """
 
         warnings: list[str] = []
-        try:
-            filings, ingestion_warnings = self.filing_service.ingest_company_filings(
-                session,
-                company,
-                market=infer_market_from_ticker(company.ticker),
-                filing_types={"annual_report"},
-            )
-        except TypeError:
-            filings, ingestion_warnings = self.filing_service.ingest_company_filings(
-                session,
-                company,
-                market=infer_market_from_ticker(company.ticker),
-            )
+        if skip_ingestion:
+            filings = get_filings(session, company.id)
+            ingestion_warnings: list[str] = []
+            if not filings:
+                ingestion_warnings.append("Filing ingestion skipped (skip_ingestion=True). No existing filings found — run /research/prewarm to ingest.")
+        else:
+            try:
+                filings, ingestion_warnings = self.filing_service.ingest_company_filings(
+                    session,
+                    company,
+                    market=infer_market_from_ticker(company.ticker),
+                    filing_types={"annual_report"},
+                )
+            except TypeError:
+                filings, ingestion_warnings = self.filing_service.ingest_company_filings(
+                    session,
+                    company,
+                    market=infer_market_from_ticker(company.ticker),
+                )
         evidence_bundle = self._retrieve_evidence_bundle(session, company)
         if any(evidence_bundle.values()):
             ingestion_warnings = [

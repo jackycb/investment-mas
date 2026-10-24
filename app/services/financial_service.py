@@ -132,21 +132,30 @@ class FinancialService:
         }, reports, warnings
 
     def compare_peers(self, ticker: str, company_name: str, company_reports: list[dict], peer_list: list[dict]) -> dict:
-        """Compare key metrics against peers."""
+        """Compare key metrics against peers using Yahoo Finance for consistency.
 
-        if not company_reports:
-            return {"metrics": {}, "peer_details": [], "summary": ["The company lacks recent annual report data; peer comparison cannot be completed at this time."]}
+        All data (company + peers) comes from Yahoo Finance TTM figures
+        so that the comparison uses a single consistent data source.
+        """
+        from app.providers.financial_data_provider import fetch_yahoo_peer_financials
 
-        company_latest = company_reports[-1]
+        all_tickers = [ticker] + [peer["ticker"] for peer in peer_list]
+        yahoo_data = fetch_yahoo_peer_financials(all_tickers)
+
+        company_yahoo = (yahoo_data.get(ticker) or [None])[0]
+        if not company_yahoo:
+            if not company_reports:
+                return {"metrics": {}, "peer_details": [], "summary": ["No financial data available for peer comparison."]}
+            company_yahoo = company_reports[-1]
+            company_yahoo["raw_source"] = {"source_kind": "local_annual_report", "note": "Yahoo Finance unavailable, fell back to local data"}
+
         peer_details: list[dict] = []
         metric_values = {"gross_margin": [], "net_margin": [], "roe": [], "roic": []}
-        peer_financials = self.provider.load_peer_financials([peer["ticker"] for peer in peer_list], years=1)
         for peer in peer_list:
-            peer_reports = peer_financials.get(peer["ticker"], [])
-            if not peer_reports:
+            peer_records = yahoo_data.get(peer["ticker"], [])
+            if not peer_records:
                 continue
-            peer_reports = self._enrich_missing_metrics(peer["ticker"], peer_reports)
-            latest = peer_reports[0]
+            latest = peer_records[0]
             peer_entry = {"ticker": peer["ticker"], "company_name": peer["company_name"], "metrics": latest}
             peer_details.append(peer_entry)
             for metric in metric_values:
@@ -155,7 +164,7 @@ class FinancialService:
 
         metrics: dict[str, dict] = {}
         for metric, values in metric_values.items():
-            company_value = company_latest.get(metric)
+            company_value = company_yahoo.get(metric)
             if values:
                 sorted_values = sorted(values + ([company_value] if company_value is not None else []), reverse=True)
                 rank = sorted_values.index(company_value) + 1 if company_value is not None else None
@@ -165,6 +174,7 @@ class FinancialService:
                     "peer_median": median(values),
                     "ranking": rank,
                     "peer_count": len(values),
+                    "data_source": "yahoo_finance_ttm",
                 }
             else:
                 metrics[metric] = {
@@ -173,6 +183,7 @@ class FinancialService:
                     "peer_median": None,
                     "ranking": None,
                     "peer_count": 0,
+                    "data_source": "yahoo_finance_ttm",
                 }
 
         summary = []
@@ -182,7 +193,7 @@ class FinancialService:
             relation = "above" if data["company_value"] >= data["peer_avg"] else "below"
             metric_label = {"gross_margin": "Gross margin", "net_margin": "Net margin", "roe": "ROE", "roic": "ROIC"}.get(metric, metric)
             summary.append(f"{metric_label} is {relation} the peer average.")
-        return {"metrics": metrics, "peer_details": peer_details, "summary": summary}
+        return {"metrics": metrics, "peer_details": peer_details, "summary": summary, "data_source": "yahoo_finance_ttm"}
 
     def identify_red_flags(self, financial_summary: dict, peer_comparison: dict) -> list[str]:
         """Return explainable financial red flags."""

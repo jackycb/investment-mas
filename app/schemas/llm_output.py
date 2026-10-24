@@ -125,6 +125,7 @@ class ReportSectionBase(_BaseOutputModel):
 
     core_judgement: str
     open_questions: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
 
 
 class BusinessAnalysisSection(ReportSectionBase):
@@ -145,6 +146,8 @@ class PeerComparisonAnalysisSection(ReportSectionBase):
 
     strengths_vs_peers: list[str] = Field(default_factory=list)
     weaknesses_vs_peers: list[str] = Field(default_factory=list)
+    excluded_peers: list[str] = Field(default_factory=list)
+    included_peer_names: list[str] = Field(default_factory=list)
 
 
 class ValuationAnalysisSection(_BaseOutputModel):
@@ -155,6 +158,7 @@ class ValuationAnalysisSection(_BaseOutputModel):
     bull_base_bear_summary: str
     key_assumptions: list[str] = Field(default_factory=list)
     valuation_risks: list[str] = Field(default_factory=list)
+    assumption_gaps: list[str] = Field(default_factory=list)
 
 
 class RiskReviewSection(_BaseOutputModel):
@@ -166,12 +170,38 @@ class RiskReviewSection(_BaseOutputModel):
     what_would_change_my_mind: list[str] = Field(default_factory=list)
 
 
+class InvestmentThesisSection(_BaseOutputModel):
+    """Investment thesis with long/short cases and variant perception."""
+
+    long_case: str = ""
+    short_case: str = ""
+    variant_perception: str = ""
+    key_debate: str = ""
+
+
+class DataQualityCheckSection(_BaseOutputModel):
+    """Data quality assessment produced by the LLM."""
+
+    missing_critical_data: list[str] = Field(default_factory=list)
+    suspected_data_issues: list[str] = Field(default_factory=list)
+    peer_set_quality: str = ""
+    valuation_reliability: str = ""
+
+
+class ContradictionItem(_BaseOutputModel):
+    """A contradiction or tension found in the analysis."""
+
+    area: str = ""
+    description: str = ""
+
+
 class FinalRecommendationSection(_BaseOutputModel):
     """Final recommendation section."""
 
     final_rating: Literal["buy", "watch", "avoid", "research_more"]
     reason: str
     confidence: float = Field(ge=0.0, le=1.0)
+    contradictions_found: list[ContradictionItem] = Field(default_factory=list)
 
 
 class NewsDigestItem(_BaseOutputModel):
@@ -194,5 +224,7 @@ class InvestmentReportLLMOutput(_BaseOutputModel):
     peer_comparison_analysis: PeerComparisonAnalysisSection
     valuation_analysis: ValuationAnalysisSection
     risk_review: RiskReviewSection
+    investment_thesis: InvestmentThesisSection = Field(default_factory=InvestmentThesisSection)
+    data_quality_check: DataQualityCheckSection = Field(default_factory=DataQualityCheckSection)
     news_digest: list[NewsDigestItem] = Field(default_factory=list)
     final_recommendation: FinalRecommendationSection

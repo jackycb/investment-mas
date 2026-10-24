@@ -21,6 +21,6 @@ class InvestmentExpertNode:
                 "final_report": "",
                 "final_rating": "research_more",
                 "report_json": {},
-                "errors": state.get("errors", []) + [f"InvestmentExpert failed: {exc}"],
+                "errors": [f"InvestmentExpert failed: {exc}"],
             }
         return {"final_report": report_markdown, "final_rating": final_rating, "report_json": report_json}

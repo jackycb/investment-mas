@@ -31,11 +31,20 @@ from app.schemas.research import (
     FollowupQARequest,
     FollowupQAResponse,
     LatestResearchResponse,
+    PerformanceHistoryResponse,
+    PrewarmRequest,
+    PrewarmResponse,
+    RefreshPeersRequest,
+    RefreshPeersResponse,
+    RerunSectionRequest,
+    RerunSectionResponse,
     ResearchChatRequest,
     ResearchChatResponse,
     ResearchRunRequest,
     ResearchRunResponse,
+    RunPerformanceDetailResponse,
 )
+from app.services import performance_tracker
 from app.services.feedback_refinement_service import FeedbackRefinementService
 from app.services.followup_qa_service import FollowupQAService
 from app.services.docx_export_service import markdown_report_to_docx
@@ -50,12 +59,20 @@ router = APIRouter(prefix="/research", tags=["research"])
 def run_research(payload: ResearchRunRequest, session: Session = Depends(get_db_session)) -> ResearchRunResponse:
     """Run the research workflow and persist outputs."""
 
-    execution = ResearchRunner(session, model=payload.model).run(payload.ticker, payload.company_name)
+    execution = ResearchRunner(session, model=payload.model).run(
+        payload.ticker, payload.company_name, force_refresh=payload.force_refresh
+    )
     return execution.response
 
 
 @router.get("/stream")
-def stream_research(ticker: str, company_name: str, model: str | None = None, session: Session = Depends(get_db_session)) -> StreamingResponse:
+def stream_research(
+    ticker: str,
+    company_name: str,
+    model: str | None = None,
+    force_refresh: bool = False,
+    session: Session = Depends(get_db_session),
+) -> StreamingResponse:
     """Run the research workflow and stream progress via SSE."""
 
     def event_stream() -> Iterator[str]:
@@ -63,9 +80,12 @@ def stream_research(ticker: str, company_name: str, model: str | None = None, se
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
         try:
-            for item in ResearchRunner(session, model=model).run_stream(ticker, company_name):
+            runner = ResearchRunner(session, model=model)
+            for item in runner.run_stream(ticker, company_name, force_refresh=force_refresh):
                 yield emit(item["event"], item["data"])
         except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("stream_research_failed: %s", exc, exc_info=True)
             session.rollback()
             yield emit("error", {"detail": str(exc)})
 
@@ -88,6 +108,50 @@ def get_latest_research(ticker: str, session: Session = Depends(get_db_session))
         report_markdown=report.report_markdown,
         report_json=report.report_json,
     )
+
+
+@router.get("/{ticker}/plan")
+def get_research_plan(ticker: str, session: Session = Depends(get_db_session)) -> dict:
+    """Return the research plan embedded in the latest report."""
+
+    ticker = normalize_ticker(ticker)
+    report = get_latest_report_by_ticker(session, ticker)
+    if not report or not report.report_json:
+        raise HTTPException(status_code=404, detail=f"No report found for ticker {ticker.upper()}")
+    plan = report.report_json.get("_research_plan")
+    if not plan:
+        raise HTTPException(status_code=404, detail=f"No research plan found for ticker {ticker.upper()}")
+    return {"ticker": ticker.upper(), "research_plan": plan}
+@router.get("/{ticker}/performance", response_model=PerformanceHistoryResponse)
+def get_performance_history(
+    ticker: str, limit: int = 10, session: Session = Depends(get_db_session)
+) -> PerformanceHistoryResponse:
+    """Return measured per-run telemetry for a ticker (optimization task §10).
+
+    ``comparison`` diffs the newest run against the oldest loaded run so the
+    repeat-run saving is a measured number, not an estimate.
+    """
+
+    ticker = normalize_ticker(ticker)
+    bounded = max(1, min(int(limit or 10), 50))
+    data = performance_tracker.ticker_performance(session, ticker, limit=bounded)
+    return PerformanceHistoryResponse(**data)
+
+
+@router.get("/{ticker}/performance/{task_id}", response_model=RunPerformanceDetailResponse)
+def get_performance_run(
+    ticker: str, task_id: str, session: Session = Depends(get_db_session)
+) -> RunPerformanceDetailResponse:
+    """Return span-level detail (nodes, skills, LLM calls) for one run."""
+
+    detail = performance_tracker.load_run_detail(session, task_id)
+    if not detail:
+        raise HTTPException(status_code=404, detail=f"No telemetry found for task {task_id}")
+    detail.setdefault("ticker", normalize_ticker(ticker).upper())
+    return RunPerformanceDetailResponse(**detail)
+
+
+
 
 
 @router.get("/{ticker}/report.docx")
@@ -306,4 +370,90 @@ def submit_feedback(payload: FeedbackRequest, session: Session = Depends(get_db_
         refined_content=result.get("refined_content", ""),
         additional_evidence_count=result.get("additional_evidence_count", 0),
         feedback_resolution=result.get("feedback_resolution", ""),
+    )
+
+
+@router.post("/prewarm", response_model=PrewarmResponse)
+def prewarm_filings(payload: PrewarmRequest, session: Session = Depends(get_db_session)) -> PrewarmResponse:
+    """Trigger filing ingestion without running the full research workflow."""
+
+    from app.db.repositories.company_repository import get_or_create_company
+    from app.services.filing_service import FilingService
+    from app.utils.metadata_utils import infer_market_from_ticker
+
+    ticker = normalize_ticker(payload.ticker)
+    company = get_or_create_company(session, ticker, payload.company_name)
+    service = FilingService()
+    try:
+        filings, warnings = service.ingest_company_filings(
+            session, company,
+            market=infer_market_from_ticker(ticker),
+            filing_types={"annual_report"},
+        )
+        session.commit()
+        return PrewarmResponse(
+            ticker=ticker,
+            filings_ingested=len(filings),
+            warnings=warnings,
+            status="completed",
+        )
+    except Exception as exc:
+        session.rollback()
+        return PrewarmResponse(ticker=ticker, warnings=[str(exc)], status="failed")
+
+
+@router.post("/refresh-peers", response_model=RefreshPeersResponse)
+def refresh_peers(payload: RefreshPeersRequest, session: Session = Depends(get_db_session)) -> RefreshPeersResponse:
+    """Refresh peer candidates and load metric snapshots."""
+
+    from app.services.peer_intelligence_service import PeerIntelligenceService
+
+    ticker = normalize_ticker(payload.ticker)
+    company = get_company_by_ticker(session, ticker)
+    profile: dict = {}
+    if company:
+        from app.db.repositories.company_repository import get_latest_company_profile
+        stored = get_latest_company_profile(session, company.id)
+        if stored:
+            profile = {
+                "business_model": stored.business_model or "",
+                "market_space": stored.market_space or "",
+                "competition_landscape": stored.competition_landscape or "",
+                "key_products": stored.key_products or [],
+            }
+
+    service = PeerIntelligenceService()
+    candidates, warnings = service.discover_candidates(
+        ticker=ticker,
+        company_name=payload.company_name,
+        company_profile=profile,
+    )
+    peer_tickers = [str(p.get("ticker", "")) for p in candidates if p.get("ticker")]
+    metrics = service.load_peer_metrics(peer_tickers)
+    return RefreshPeersResponse(
+        ticker=ticker,
+        peer_count=len(candidates),
+        peers_with_metrics=len(metrics),
+        peer_candidates=candidates[:8],
+        warnings=warnings,
+    )
+
+
+@router.post("/rerun-section", response_model=RerunSectionResponse)
+def rerun_section(payload: RerunSectionRequest, session: Session = Depends(get_db_session)) -> RerunSectionResponse:
+    """Rerun a single report section without full workflow re-execution."""
+
+    ticker = normalize_ticker(payload.ticker)
+    result = FeedbackRefinementService().refine(
+        session=session,
+        ticker=ticker,
+        section_name=payload.section_name,
+        feedback_type="need_more_detail",
+        feedback_text=payload.feedback_text or f"Please regenerate the {payload.section_name} section with deeper analysis.",
+    )
+    return RerunSectionResponse(
+        ticker=ticker,
+        section_name=payload.section_name,
+        refined_content=result.get("refined_content", ""),
+        impacted_sections=result.get("impacted_sections", []),
     )

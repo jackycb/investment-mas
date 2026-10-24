@@ -53,15 +53,29 @@ class BusinessAnalysisService:
         company_profile: dict[str, Any],
         filing_coverage: dict[str, Any],
         model: str | None = None,
+        focus_areas: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return business_analysis and segment_analysis dicts."""
 
         company = get_company_by_ticker(session, ticker)
         warnings: list[str] = []
 
-        segment_evidence = self._retrieve_topic(session, company, SEGMENT_QUERIES, SEGMENT_KEYWORDS) if company else []
-        market_evidence = self._retrieve_topic(session, company, MARKET_QUERIES, MARKET_KEYWORDS) if company else []
-        competition_evidence = self._retrieve_topic(session, company, COMPETITION_QUERIES, COMPETITION_KEYWORDS) if company else []
+        # When focus_areas is provided, use it to scope evidence retrieval queries.
+        # When None or empty, use the existing fixed query lists.
+        if focus_areas:
+            # Scope queries to only focus_areas mentioned
+            fa_set = {f.strip().lower() for f in focus_areas}
+            segment_queries = SEGMENT_QUERIES if any(k in fa_set for k in ("segment", "revenue", "product", "业务", "分部")) else []
+            market_queries = MARKET_QUERIES if any(k in fa_set for k in ("market", "industry", "growth", "customer", "市场", "需求")) else []
+            competition_queries = COMPETITION_QUERIES if any(k in fa_set for k in ("competition", "competitive", "market share", "竞争", "份额")) else []
+        else:
+            segment_queries = SEGMENT_QUERIES
+            market_queries = MARKET_QUERIES
+            competition_queries = COMPETITION_QUERIES
+
+        segment_evidence = self._retrieve_topic(session, company, segment_queries, SEGMENT_KEYWORDS) if company else []
+        market_evidence = self._retrieve_topic(session, company, market_queries, MARKET_KEYWORDS) if company else []
+        competition_evidence = self._retrieve_topic(session, company, competition_queries, COMPETITION_KEYWORDS) if company else []
 
         if not any([segment_evidence, market_evidence, competition_evidence]):
             warnings.append("BusinessAnalyst: Insufficient annual report evidence retrieved; business analysis will be based on company profile.")
@@ -202,13 +216,16 @@ class BusinessAnalysisService:
 Your task is to complete the following analyses based on the provided company profile and annual report evidence:
 1. In-depth business model analysis
 2. Market space and driver analysis
-3. Business segment breakdown (if the company is a conglomerate/group)
+3. Business segment breakdown (required for dual-platform, conglomerate, or group companies)
 4. Competitive landscape analysis
 
 Analysis principles:
 - Base your analysis only on the given evidence; do not fabricate facts
-- If the company is a conglomerate/group, you must attempt to break down the major business segments
-- If segment revenue/profit share data is missing, do not fabricate it, but indicate which segments have been identified and which lack quantitative data
+- If the company has multiple business platforms/segments (e.g. domestic + international, marketplace + direct sales, cloud + commerce), you MUST identify and separately analyze each one
+- For each segment, classify its strategic role: "core_profit_engine", "growth_engine", "cash_consuming_segment", or "other"
+- If segment revenue/profit split is available in the evidence, include it
+- If segment unit economics are available (e.g., take rate, AOV, order frequency, customer acquisition cost), include them
+- If segment economics are NOT available, explicitly list them as open_questions — do not silently omit them
 - Provide supporting_evidence_refs for each judgement
 
 {COMMON_JSON_RULES}"""
@@ -237,12 +254,30 @@ Analysis principles:
   "segment_analysis": {
     "is_group_company": false,
     "segments": [
-      {"segment_name": "", "revenue_share": null, "profit_share": null, "business_description": "", "market_context": "", "competition_context": "", "key_drivers": [], "key_risks": []}
+      {
+        "segment_name": "",
+        "strategic_role": "core_profit_engine | growth_engine | cash_consuming_segment | other",
+        "revenue_share": null,
+        "profit_share": null,
+        "business_description": "",
+        "unit_economics": {"available": false, "metrics": {}, "open_questions": []},
+        "market_context": "",
+        "competition_context": "",
+        "key_drivers": [],
+        "key_risks": []
+      }
     ],
     "segment_level_open_questions": [],
     "supporting_evidence_refs": []
   }
-}""",
+}
+
+Segment analysis rules:
+- For dual-platform companies (e.g., domestic + international, Pinduoduo + Temu), EACH platform must be a separate segment
+- strategic_role must be one of: "core_profit_engine", "growth_engine", "cash_consuming_segment", "other"
+- unit_economics.available: true only if evidence contains specific metrics (take rate, AOV, ARPU, etc.)
+- unit_economics.open_questions: list what is unknown but thesis-critical (e.g., "Temu per-order profitability unknown")
+- If revenue/profit split between segments is not available, add it to segment_level_open_questions""",
             }
 
             messages = [

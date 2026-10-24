@@ -37,3 +37,6 @@ Thumbs.db
 .env.local
 .env.production
 
+# Local agent/editor settings (machine-specific)
+.claude/settings.local.json
+

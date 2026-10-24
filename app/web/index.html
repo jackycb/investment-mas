@@ -464,16 +464,14 @@
               <label>Company Name<input id="company-name" name="company_name" placeholder="e.g. NVIDIA / Tencent" required /></label>
               <label>Model
                 <select id="model-select" name="model">
-                  <option value="">Default</option>
-                  <option value="qwen-turbo-2025-04-28">qwen-turbo-2025-04-28</option>
-                  <option value="qwen-plus">qwen-plus</option>
-                  <option value="qwen-max">qwen-max</option>
-                  <option value="qwen3-235b-a22b">qwen3-235b-a22b</option>
-                  <option value="qwen3-coder">qwen3-coder</option>
-                  <option value="deepseek-v3">deepseek-v3</option>
-                  <option value="deepseek-r1">deepseek-r1</option>
-                  <option value="deepseek-v4-flash">deepseek-v4-flash</option>
+                  <option value="">Default (auto)</option>
+                  <option value="auto" selected>auto</option>
+                  <option value="qwen3.8-max">qwen3.8-max</option>
+                  <option value="qwen3.8-flash">qwen3.8-flash</option>
+                  <option value="qwen3.7-plus">qwen3.7-plus</option>
+                  <option value="deepseek-v4.1-flash">deepseek-v4.1-flash</option>
                   <option value="deepseek-v4-pro">deepseek-v4-pro</option>
+                  <option value="glm-5.3">glm-5.3</option>
                 </select>
               </label>
               <div class="button-row">
